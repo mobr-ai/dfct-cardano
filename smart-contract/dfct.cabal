@@ -1,0 +1,76 @@
+cabal-version: 3.0
+name: dfct
+version: 0.1.0.0
+license: Apache-2.0
+build-type: Simple
+
+common defaults
+  default-language: Haskell2010
+  ghc-options:      -Wall -fobject-code -fno-ignore-asserts
+  build-depends:    base
+                  , bytestring  
+                  , cardano-api
+
+library
+  import:           defaults
+  exposed-modules:  DFCT.Provenance
+                    DFCT.MintingPolicy
+                    DFCT.Types
+  hs-source-dirs:   src
+  build-depends:    cardano-ledger-conway
+                  , serialise
+                  , plutus-core
+                  , plutus-ledger-api
+                  , plutus-tx
+                  , aeson
+
+test-suite dfct-tests
+  import:           defaults
+  type:             exitcode-stdio-1.0
+  main-is:          Spec.hs
+  hs-source-dirs:   test
+  other-modules:    TestFixtures
+                    Topic
+                    Contrib
+                    RewardMinting
+                    StateTransition
+                    Edge
+  build-depends:    dfct
+                  , cardano-ledger-conway
+                  , plutus-core
+                  , plutus-ledger-api
+                  , plutus-tx
+                  , tasty
+                  , tasty-hunit
+                  , tasty-quickcheck
+  ghc-options:      -threaded
+
+executable dfct-mint
+  import:           defaults
+  main-is:          CompileMP.hs
+  hs-source-dirs:   app/mint
+  build-depends:    cardano-ledger-conway
+                  , dfct
+                  , text
+                  , base16-bytestring
+                  , serialise
+                  , plutus-core
+                  , plutus-ledger-api
+                  , plutus-tx
+                  , plutus-tx-plugin
+                  , aeson
+  ghc-options:      -threaded -fplugin=PlutusTx.Plugin -fplugin-opt=PlutusTx.Plugin:defer-errors
+
+executable dfct-provenance
+  import:           defaults
+  main-is:          CompilePV.hs
+  hs-source-dirs:   app/provenance
+  build-depends:    cardano-ledger-conway
+                  , dfct
+                  , serialise
+                  , plutus-core
+                  , plutus-ledger-api
+                  , plutus-tx
+                  , plutus-tx-plugin
+                  , aeson
+  ghc-options:      -threaded -fplugin=PlutusTx.Plugin -fplugin-opt=PlutusTx.Plugin:defer-errors

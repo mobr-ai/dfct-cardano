@@ -169,3 +169,28 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+#mac
+.DS_Store
+
+# Project Specific files
+.env
+.ghc.environment.*
+.vscode
+*.old
+*.pkh
+*.addr
+*.json
+*.id
+*.raw
+*.signed
+*.skey
+*.vkey
+dist-newstyle
+dist-newstyle/*
+mint-dfc.sh
+deploy-dfct-pv.sh
+deploy-dfct-mp.sh
+dfct-prov-first.sh
+poetry.lock
+ipc
