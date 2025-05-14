@@ -189,8 +189,8 @@ cython_debug/
 dist-newstyle
 dist-newstyle/*
 mint-dfc.sh
-deploy-dfct-pv.sh
 deploy-dfct-mp.sh
-dfct-prov-first.sh
+submit-topic-utxo.sh
+submit-topic.sh
 poetry.lock
 ipc

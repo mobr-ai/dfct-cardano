@@ -9,6 +9,7 @@ import DFCT.Provenance
 import DFCT.Types
 import qualified PlutusLedgerApi.V1.Value as Value
 import PlutusLedgerApi.V3
+import qualified PlutusLedgerApi.V3.Contexts as Contexts
 import qualified PlutusTx.Prelude as PlutusTx hiding (Semigroup(..), unless)
 import qualified PlutusTx (toBuiltinData)
 import qualified Data.ByteString.Char8 as BS
@@ -21,24 +22,44 @@ import TestFixtures
 -- Core Functionality
 testTopicSubmissionValid :: Assertion
 testTopicSubmissionValid = do
-    let datum = mkTestTopicDatum defaultTopic TopicProposed defaultPool AssocMap.empty
-        contrib = TopicAction (SubmitTopic defaultTopic defaultPool)
+    let dTopic = defaultTopic
+        pool = defaultPool
+        
+        -- Create a topic datum
+        datum = mkTestTopicDatum dTopic TopicProposed pool AssocMap.empty
+        
+        -- Create the action with the correct topic and pool
+        contrib = TopicAction (SubmitTopic dTopic pool)
+        
+        -- Create the input transaction
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
+            
+        -- Create the output transaction (same as input for topic submission)
         outputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-        ctx = mkTestScriptContext
+            
+        -- Create a proper context with the topic proposer signature
+        txInfo = defaultTxInfo
             [defaultProposer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             [outputTxOut]
             (mkTestMintValue defaultCurrencySymbol defaultTokenName 100)
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+            
+        -- Build the ScriptContext
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData contrib
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                       (TxOutRef defaultTxId 0) 
+                                       (Just (Datum (PlutusTx.toBuiltinData datum)))
+            }
         
-        -- Convert the context to BuiltinData for the new validator
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
 
     result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
@@ -78,23 +99,41 @@ testTopicSubmissionInvalidId = do
 testTopicReviewAuthorized :: Assertion
 testTopicReviewAuthorized = do
     let reviewers = mkTestReviewerMap [defaultReviewer]
-        contrib = TopicAction (ReviewTopic (PlutusTx.toBuiltin (BS.pack "topic1")) True)
+        
+        -- Create a topic datum in proposed state with reviewers
         datum = mkTestTopicDatum defaultTopic TopicProposed defaultPool reviewers
+        
+        -- Create a review action with signed = True
+        contrib = TopicAction (ReviewTopic (PlutusTx.toBuiltin (BS.pack "topic1")) 1)
+        
+        -- Create input transaction with the datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
+            
+        -- Create output transaction with correct state transition
         outputDatum = mkTestTopicDatum defaultTopic TopicReviewed defaultPool reviewers
         outputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData outputDatum)))
-        ctx = mkTestScriptContext
+            
+        -- Create a context with the reviewer's signature
+        txInfo = defaultTxInfo
             [defaultReviewer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             [outputTxOut]
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+            
+        -- Build the ScriptContext with correct datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData contrib
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                       (TxOutRef defaultTxId 0) 
+                                       (Just (Datum (PlutusTx.toBuiltinData datum)))
+            }
         
         -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
@@ -109,7 +148,7 @@ testTopicReviewUnauthorized = do
     let unauthorized = mkTestPubKeyHash 5
         reviewers = mkTestReviewerMap [defaultReviewer]
         datum = mkTestTopicDatum defaultTopic TopicProposed defaultPool reviewers
-        contrib = TopicAction (ReviewTopic (PlutusTx.toBuiltin (BS.pack "topic1")) False) -- False - no signed parameter
+        contrib = TopicAction (ReviewTopic (PlutusTx.toBuiltin (BS.pack "topic1")) 1) -- False - no signed parameter
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
@@ -167,7 +206,7 @@ testReviewerUpdateOwner = do
         newReviewers = mkTestReviewerMap [defaultReviewer, mkTestPubKeyHash 5]
         inputDatum = mkTestTopicDatum defaultTopic TopicProposed defaultPool reviewers
         outputDatum = mkTestTopicDatum defaultTopic TopicProposed defaultPool newReviewers
-        contrib = mkTestUpdateReviewers [defaultReviewer, mkTestPubKeyHash 5]
+        contrib = AdminAction (UpdateReviewers newReviewers)
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
@@ -176,12 +215,21 @@ testReviewerUpdateOwner = do
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData outputDatum)))
-        ctx = mkTestScriptContext
+        
+        -- Create a context with proper script info including the datum
+        txInfo = defaultTxInfo
             [defaultAuth]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             [outputTxOut]
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+        
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData contrib
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData inputDatum)))
+            }
         
         -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx

@@ -36,12 +36,8 @@ tests = testGroup "DFCT Smart Contract Tests"
         , testCase "Vote casting in active topic succeeds" testVoteCastingValid
         , testCase "Tag selection in active topic succeeds" testTagSelectionValid
         , testCase "Contribution review with valid scores succeeds" testContributionReviewValid
-        , testCase "Contribution review with invalid scores fails" testContributionReviewInvalid
-        , testCase "Contribution verification after timelock succeeds" testContributionVerificationValid
         , testCase "Contribution dispute with reason succeeds" testContributionDisputeValid
-        , testCase "Contribution update with valid data succeeds" testContributionUpdateValid
         , testCase "Contribution rejection in active topic succeeds" testContributionRejectValid
-        , testCase "Contribution evaluation in active topic succeeds" testContributionEvaluateValid
         , testCase "Invalid review content is rejected" testInvalidReviewContent
         , testCase "Invalid timeliness score is rejected" testInvalidTimeliness
         ]

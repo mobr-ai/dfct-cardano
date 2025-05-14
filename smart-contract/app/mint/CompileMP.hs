@@ -22,7 +22,7 @@ mkWrappedPolicy params ctx = mkDFCMintingPolicy params ctx
 dfcmintingPolicy :: CompiledCode (BuiltinData -> BuiltinUnit)
 dfcmintingPolicy =
     let params = mkMintingParams
-                   (PubKeyHash "2968d98bb73b59a3c878ae7a2e8d1f4386bea032471db53c63697bee")
+                   (PubKeyHash "b3607d483242edbaae8d40c1d1c592ef9a6dd4fdaa8649f832ced319")
                    (TokenName "DFC")
     in $$(PlutusTx.compile [|| \ctx -> mkWrappedPolicy params ctx ||])
 

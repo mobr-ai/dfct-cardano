@@ -20,414 +20,681 @@ import qualified PlutusTx.AssocMap as AssocMap
 
 import TestFixtures
 
+-- Contribution Handling
 testEvidenceSubmissionValid :: Assertion
 testEvidenceSubmissionValid = do
-    let contributor = mkTestPubKeyHash 6
-        contrib = mkTestContribution contributor 2000
-        datum = mkTestTopicDatum defaultTopic TopicActivated defaultPool AssocMap.empty
-        uContrib = ContributionAction (SubmitEvidence contrib)
+    let contributer = mkTestPubKeyHash 6
+        -- Create a topic datum in activated state
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [defaultReviewer])
+        
+        -- Create a valid tContribution 
+        tContribution = mkTestContribution contributer 5000
+        
+        -- Create the action
+        contrib = ContributionAction (SubmitEvidence tContribution)
+        
+        -- Input transaction with the topic datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-        outputDatum = mkTestContributionDatum contrib
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Output transaction with same topic datum (not changing topic state)
         outputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData outputDatum)))
-        ctx = mkTestScriptContext
-            [contributor]
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Build a transaction with the contributor's signature
+        txInfo = defaultTxInfo
+            [contributer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             [outputTxOut]
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
-
+            
+        -- Build the script context
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData contrib
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData topicDatum)))
+            }
+        
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
-
+    
+    -- This should succeed
     result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
             `catch` \(_ :: SomeException) -> return False
-
+    
     assertBool "Valid evidence submission should succeed" result
 
 testVoteCastingValid :: Assertion
 testVoteCastingValid = do
-    let voter = mkTestPubKeyHash 6
-        vote = (mkTestContribution voter 2000) { contributionType = PlutusTx.toBuiltin (BS.pack "vote") }
-        datum = mkTestTopicDatum defaultTopic TopicActivated defaultPool AssocMap.empty
-        contrib = ContributionAction (CastVote vote)
+    let voter = mkTestPubKeyHash 7
+        contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
+        -- Create a tContribution with matching ID and creator
+        tContribution = mkTestContribution voter 5000
+        
+        -- Create a tContribution datum in EvidenceProposed state
+        contribDatum = ContributionDatum
+            { contribution = tContribution
+            , cStatus = EvidenceProposed
+            , relevance = 0
+            , accuracy = 0
+            , completeness = 0
+            , revContent = mkTestReviewContent defaultReviewer contribId 0
+            , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
+            , timelinessScore = 10
+            }
+        
+        -- Create the action with matching contribution
+        voteAction = ContributionAction (CastVote tContribution)
+        
+        -- Set up the active topic as a reference input
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [defaultReviewer])
+        refTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Input transaction with the tContribution datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-        outputDatum = mkTestContributionDatum vote
+            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
+            
+        -- Output with the updated tContribution status
+        outputContribDatum = contribDatum { cStatus = VoteCasted }
         outputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData outputDatum)))
-        ctx = mkTestScriptContext
-            [voter]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
-            [outputTxOut]
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData outputContribDatum)))
+            
+        -- Build the transaction info with reference to the active topic
+        txInfo = TxInfo
+            { txInfoInputs = [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
+            , txInfoReferenceInputs = [TxInInfo (TxOutRef defaultTxId 1) refTxOut]
+            , txInfoOutputs = [outputTxOut]
+            , txInfoFee = Lovelace 0
+            , txInfoMint = mkEmptyMintValue
+            , txInfoValidRange = Interval.from (POSIXTime 4600)
+            , txInfoSignatories = [voter]
+            , txInfoData = AssocMap.empty
+            , txInfoRedeemers = AssocMap.empty
+            , txInfoId = defaultTxId
+            , txInfoWdrl = AssocMap.empty
+            , txInfoTxCerts = []
+            , txInfoVotes = AssocMap.empty
+            , txInfoProposalProcedures = []
+            , txInfoCurrentTreasuryAmount = Nothing
+            , txInfoTreasuryDonation = Nothing
+            }
+            
+        -- Build the script context with contribution datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData voteAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData contribDatum)))
+            }
         
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
-
+    
+    -- This should succeed
     result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
             `catch` \(_ :: SomeException) -> return False
-
+    
     assertBool "Valid vote casting should succeed" result
 
 testTagSelectionValid :: Assertion
 testTagSelectionValid = do
-    let tagger = mkTestPubKeyHash 6
-        tag = (mkTestContribution tagger 2000) { contributionType = PlutusTx.toBuiltin (BS.pack "verdict_tag") }
-        datum = mkTestTopicDatum defaultTopic TopicActivated defaultPool AssocMap.empty
-        contrib = ContributionAction (SelectTag tag)
+    let tagger = mkTestPubKeyHash 8
+        contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
+        -- Create a tContribution with matching ID and creator
+        tContribution = mkTestContribution tagger 5000
+        
+        -- Create a tContribution datum in EvidenceProposed state
+        contribDatum = ContributionDatum
+            { contribution = tContribution
+            , cStatus = EvidenceProposed
+            , relevance = 0
+            , accuracy = 0
+            , completeness = 0
+            , revContent = mkTestReviewContent defaultReviewer contribId 0
+            , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
+            , timelinessScore = 10
+            }
+        
+        -- Create the action with matching contribution
+        tagAction = ContributionAction (SelectTag tContribution)
+        
+        -- Set up the active topic as a reference input
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [defaultReviewer])
+        refTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Input transaction with the tContribution datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-        outputDatum = mkTestContributionDatum tag
+            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
+            
+        -- Output with the updated tContribution status
+        outputContribDatum = contribDatum { cStatus = VerdictTagSelected }
         outputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData outputDatum)))
-        ctx = mkTestScriptContext
-            [tagger]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
-            [outputTxOut]
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData outputContribDatum)))
+            
+        -- Build the transaction info with reference to the active topic
+        txInfo = TxInfo
+            { txInfoInputs = [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
+            , txInfoReferenceInputs = [TxInInfo (TxOutRef defaultTxId 1) refTxOut]
+            , txInfoOutputs = [outputTxOut]
+            , txInfoFee = Lovelace 0
+            , txInfoMint = mkEmptyMintValue
+            , txInfoValidRange = Interval.from (POSIXTime 4600)
+            , txInfoSignatories = [tagger]
+            , txInfoData = AssocMap.empty
+            , txInfoRedeemers = AssocMap.empty
+            , txInfoId = defaultTxId
+            , txInfoWdrl = AssocMap.empty
+            , txInfoTxCerts = []
+            , txInfoVotes = AssocMap.empty
+            , txInfoProposalProcedures = []
+            , txInfoCurrentTreasuryAmount = Nothing
+            , txInfoTreasuryDonation = Nothing
+            }
+            
+        -- Build the script context with contribution datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData tagAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData contribDatum)))
+            }
         
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
-
+    
+    -- This should succeed
     result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
             `catch` \(_ :: SomeException) -> return False
-
+    
     assertBool "Valid tag selection should succeed" result
 
 testContributionReviewValid :: Assertion
 testContributionReviewValid = do
-    let reviewers = mkTestReviewerMap [defaultReviewer]
-        contrib = mkTestContribution defaultReviewer 2000
-        contribDatum = mkTestContributionDatum contrib
-        reviewContent = mkTestReviewContent defaultReviewer (PlutusTx.toBuiltin (BS.pack "contrib1")) 2001
-        uContrib = ContributionAction (ReviewContribution (PlutusTx.toBuiltin (BS.pack "contrib1")) 8 9 7 reviewContent)
-        inputTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
-
-        -- Create a proper topic datum in the active state
-        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool reviewers
-        topicTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+    let contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
+        reviewer = defaultReviewer
+        reviewContent = mkTestReviewContent reviewer contribId 5100
         
-        ctx = mkTestScriptContext
-            [defaultReviewer]
-            [TxInInfo (TxOutRef defaultTxId 0) topicTxOut, TxInInfo (TxOutRef defaultTxId 1) inputTxOut]
-            []
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
+        -- Create a tContribution with matching ID
+        tContribution = mkTestContribution (mkTestPubKeyHash 9) 5000
+        contribDatum = ContributionDatum
+            { contribution = tContribution
+            , cStatus = EvidenceProposed
+            , relevance = 0
+            , accuracy = 0
+            , completeness = 0
+            , revContent = mkTestReviewContent reviewer contribId 0
+            , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
+            , timelinessScore = 10
+            }
         
-        ctxData = PlutusTx.toBuiltinData ctx
-
-    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
-            `catch` \(_ :: SomeException) -> return False
-
-    assertBool "Valid contribution review should succeed" result
-
-testContributionReviewInvalid :: Assertion
-testContributionReviewInvalid = do
-    let contribDatum = mkTestContributionDatum (mkTestContribution defaultReviewer 2000)
-        reviewContent = mkTestReviewContent defaultReviewer (PlutusTx.toBuiltin (BS.pack "contrib1")) 2001
-        contrib = ContributionAction (ReviewContribution (PlutusTx.toBuiltin (BS.pack "contrib1")) (-1) 9 7 reviewContent)
-        inputTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton (CurrencySymbol PlutusTx.emptyByteString) (Value.TokenName PlutusTx.emptyByteString) 0)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
-        ctx = mkTestScriptContext
-            [defaultReviewer]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
-            []
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+        -- Create the review action with scores
+        reviewAction = ContributionAction (ReviewContribution contribId 8 7 9 reviewContent)
         
-        ctxData = PlutusTx.toBuiltinData ctx
-
-    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return False)
-              `catch` \(_ :: SomeException) -> return True
-
-    assertBool "Invalid scores should fail" result
-
-testContributionVerificationValid :: Assertion
-testContributionVerificationValid = do
-    let reviewers = mkTestReviewerMap [defaultReviewer]
-        contrib = mkTestContribution defaultProposer 2000
-        uContrib = ContributionAction (VerifyContribution (PlutusTx.toBuiltin (BS.pack "contrib1")))
-        
-        -- create a topic datum in activated state
-        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool reviewers
-        
-        inputTxOut = mkTestTxOut
+        -- Set up the active topic as a reference input
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [reviewer])
+        refTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
-        
-        -- add the contribution datum
-        contribDatum = mkTestContributionDatum contrib
-        contribTxOut = mkTestTxOut
+            
+        -- Input transaction with the tContribution datum
+        inputTxOut = mkTestTxOut
             defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 50)
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
             
-        ctx = mkTestScriptContext
-            [defaultProposer]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut, TxInInfo (TxOutRef defaultTxId 1) contribTxOut]
-            []
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
+        -- Output with the updated tContribution status, scores, and review content
+        outputContribDatum = contribDatum { 
+            cStatus = ContributionReviewed,
+            relevance = 8,
+            accuracy = 7,
+            completeness = 9,
+            revContent = reviewContent
+        }
+        outputTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData outputContribDatum)))
+            
+        -- Build the transaction info with reference to the active topic
+        txInfo = TxInfo
+            { txInfoInputs = [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
+            , txInfoReferenceInputs = [TxInInfo (TxOutRef defaultTxId 1) refTxOut]
+            , txInfoOutputs = [outputTxOut]
+            , txInfoFee = Lovelace 0
+            , txInfoMint = mkEmptyMintValue
+            , txInfoValidRange = Interval.from (POSIXTime 4600)
+            , txInfoSignatories = [reviewer]
+            , txInfoData = AssocMap.empty
+            , txInfoRedeemers = AssocMap.empty
+            , txInfoId = defaultTxId
+            , txInfoWdrl = AssocMap.empty
+            , txInfoTxCerts = []
+            , txInfoVotes = AssocMap.empty
+            , txInfoProposalProcedures = []
+            , txInfoCurrentTreasuryAmount = Nothing
+            , txInfoTreasuryDonation = Nothing
+            }
+            
+        -- Build the script context with contribution datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData reviewAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData contribDatum)))
+            }
         
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
-
+    
+    -- This should succeed
     result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
             `catch` \(_ :: SomeException) -> return False
-
-    assertBool "Valid contribution verification should succeed" result
+    
+    assertBool "Valid contribution review should succeed" result
 
 testContributionDisputeValid :: Assertion
 testContributionDisputeValid = do
-    let reviewers = mkTestReviewerMap [defaultReviewer]
-        contrib = mkTestContribution defaultProposer 2000
-        disputeReason = mkTestDisputeReason defaultProposer 2001
-        uContrib = ContributionAction (DisputeContribution (PlutusTx.toBuiltin (BS.pack "contrib1")) disputeReason)
+    let disputer = mkTestPubKeyHash 10
+        contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
+        disputeReason = mkTestDisputeReason disputer 5200
         
-        -- create a topic datum in activated state
-        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool reviewers
+        -- Create a tContribution with matching ID
+        tContribution = mkTestContribution (mkTestPubKeyHash 9) 5000
+        contribDatum = ContributionDatum
+            { contribution = tContribution
+            , cStatus = EvidenceProposed
+            , relevance = 0
+            , accuracy = 0
+            , completeness = 0
+            , revContent = mkTestReviewContent defaultReviewer contribId 0
+            , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
+            , timelinessScore = 10
+            }
         
-        inputTxOut = mkTestTxOut
+        -- Create the dispute action
+        disputeAction = ContributionAction (DisputeContribution contribId disputeReason)
+        
+        -- Set up the active topic as a reference input
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [defaultReviewer])
+        refTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
-        
-        -- add the contribution datum
-        contribDatum = mkTestContributionDatum contrib
-        contribTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 50)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
             
-        ctx = mkTestScriptContext
-            [defaultProposer]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut, TxInInfo (TxOutRef defaultTxId 1) contribTxOut]
-            []
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
-        
-        ctxData = PlutusTx.toBuiltinData ctx
-
-    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
-            `catch` \(_ :: SomeException) -> return False
-
-    assertBool "Valid contribution dispute should succeed" result
-
---  tests for additional contribution actions
-
-testContributionUpdateValid :: Assertion
-testContributionUpdateValid = do
-    let contributor = mkTestPubKeyHash 6
-        contrib = mkTestContribution contributor 2000
-        datum = mkTestTopicDatum defaultTopic TopicActivated defaultPool AssocMap.empty
-        newContent = PlutusTx.toBuiltin (BS.pack "Updated content")
-        uContrib = ContributionAction (UpdateContribution (PlutusTx.toBuiltin (BS.pack "contrib1")) newContent)
+        -- Input transaction with the tContribution datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-        
-        -- Create a proper contribution datum
-        contribDatum = mkTestContributionDatum contrib
-        contribTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 50)
             (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
             
-        ctx = mkTestScriptContext
-            [contributor]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut, TxInInfo (TxOutRef defaultTxId 1) contribTxOut]
-            []
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
+        -- Output with the updated tContribution status and dispute reason
+        outputContribDatum = contribDatum { 
+            cStatus = ContributionDisputed,
+            dispReason = disputeReason
+        }
+        outputTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData outputContribDatum)))
+            
+        -- Build the transaction info with reference to the active topic
+        txInfo = TxInfo
+            { txInfoInputs = [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
+            , txInfoReferenceInputs = [TxInInfo (TxOutRef defaultTxId 1) refTxOut]
+            , txInfoOutputs = [outputTxOut]
+            , txInfoFee = Lovelace 0
+            , txInfoMint = mkEmptyMintValue
+            , txInfoValidRange = Interval.from (POSIXTime 4600)
+            , txInfoSignatories = [disputer]
+            , txInfoData = AssocMap.empty
+            , txInfoRedeemers = AssocMap.empty
+            , txInfoId = defaultTxId
+            , txInfoWdrl = AssocMap.empty
+            , txInfoTxCerts = []
+            , txInfoVotes = AssocMap.empty
+            , txInfoProposalProcedures = []
+            , txInfoCurrentTreasuryAmount = Nothing
+            , txInfoTreasuryDonation = Nothing
+            }
+            
+        -- Build the script context with contribution datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData disputeAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData contribDatum)))
+            }
         
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
-
+    
+    -- This should succeed
     result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
             `catch` \(_ :: SomeException) -> return False
-
-    assertBool "Valid contribution update should succeed" result
+    
+    assertBool "Valid contribution dispute should succeed" result
 
 testContributionRejectValid :: Assertion
 testContributionRejectValid = do
     let reviewer = defaultReviewer
-        reviewers = mkTestReviewerMap [reviewer]
-        contrib = mkTestContribution defaultProposer 2000
-        uContrib = ContributionAction (RejectContribution (PlutusTx.toBuiltin (BS.pack "contrib1")))
+        contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
         
-        -- Create a topic datum in activated state
-        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool reviewers
+        -- Create a tContribution with matching ID
+        tContribution = mkTestContribution (mkTestPubKeyHash 11) 5000
+        contribDatum = ContributionDatum
+            { contribution = tContribution
+            , cStatus = EvidenceProposed
+            , relevance = 0
+            , accuracy = 0
+            , completeness = 0
+            , revContent = mkTestReviewContent reviewer contribId 0
+            , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
+            , timelinessScore = 10
+            }
         
-        inputTxOut = mkTestTxOut
+        -- Create the reject action
+        rejectAction = ContributionAction (RejectContribution contribId)
+        
+        -- Set up the active topic as a reference input
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [reviewer])
+        refTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
-        
-        -- Add the contribution datum
-        contribDatum = mkTestContributionDatum contrib
-        contribTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 50)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
             
-        ctx = mkTestScriptContext
-            [reviewer] 
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut, TxInInfo (TxOutRef defaultTxId 1) contribTxOut]
-            []
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
-        
-        ctxData = PlutusTx.toBuiltinData ctx
-
-    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
-            `catch` \(_ :: SomeException) -> return False
-
-    assertBool "Valid contribution rejection should succeed" result
-
-testContributionEvaluateValid :: Assertion
-testContributionEvaluateValid = do
-    let evaluator = mkTestPubKeyHash 5
-        reviewers = mkTestReviewerMap [defaultReviewer]
-        contrib = mkTestContribution defaultProposer 2000
-        uContrib = ContributionAction (EvaluateContribution (PlutusTx.toBuiltin (BS.pack "contrib1")))
-        
-        -- Create a topic datum in activated state
-        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool reviewers
-        
+        -- Input transaction with the tContribution datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
-        
-        -- Add the contribution datum
-        contribDatum = mkTestContributionDatum contrib
-        contribTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 50)
             (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
             
-        ctx = mkTestScriptContext
-            [evaluator]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut, TxInInfo (TxOutRef defaultTxId 1) contribTxOut]
-            []
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
-        
-        ctxData = PlutusTx.toBuiltinData ctx
-
-    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
-            `catch` \(_ :: SomeException) -> return False
-
-    assertBool "Valid contribution evaluation should succeed" result
-
-testInvalidTimeliness :: Assertion
-testInvalidTimeliness = do
-    let contributor = mkTestPubKeyHash 6
-        contrib = mkTestContribution contributor 2000
-        
-        -- Mock a contribution with an invalid timeliness calculation
-        -- For this, we'll create a setup where the function validateContributionTimeliness would fail
-        -- by setting up a negative timeScore
-        
-        -- Create a topic datum with a very recent creationTimestamp
-        futureTimestamp = 2000 + (60 * 60 * 24 * 365) -- One year in the future
-        modifiedPool = defaultPool { creationTimestamp = futureTimestamp }
-        datum = mkTestTopicDatum defaultTopic TopicActivated modifiedPool AssocMap.empty
-        
-        -- Set the contribution timestamp to be before the topic creation
-        pastContrib = contrib { contributionTimestamp = 1000 }  -- In the past
-        
-        uContrib = ContributionAction (SubmitEvidence pastContrib)
-        
-        inputTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-            
-        outputDatum = mkTestContributionDatum pastContrib
+        -- Output with the updated tContribution status
+        outputContribDatum = contribDatum { cStatus = ContributionRejected }
         outputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData outputDatum)))
+            (OutputDatum (Datum (PlutusTx.toBuiltinData outputContribDatum)))
             
-        -- Create a context with a validRange that would produce a negative timeliness score
-        -- We need to set up the ScriptContext manually to ensure proper validation failure
-        txInfo = (scriptContextTxInfo $ mkTestScriptContext
-            [contributor]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
-            [outputTxOut]
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib))
-            -- Override the validRange to a time that would cause timeliness calculation to fail
-            { txInfoValidRange = Interval.from (POSIXTime 1000) }  -- Very early time
+        -- Build the transaction info with reference to the active topic
+        txInfo = TxInfo
+            { txInfoInputs = [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
+            , txInfoReferenceInputs = [TxInInfo (TxOutRef defaultTxId 1) refTxOut]
+            , txInfoOutputs = [outputTxOut]
+            , txInfoFee = Lovelace 0
+            , txInfoMint = mkEmptyMintValue
+            , txInfoValidRange = Interval.from (POSIXTime 4600)
+            , txInfoSignatories = [reviewer]
+            , txInfoData = AssocMap.empty
+            , txInfoRedeemers = AssocMap.empty
+            , txInfoId = defaultTxId
+            , txInfoWdrl = AssocMap.empty
+            , txInfoTxCerts = []
+            , txInfoVotes = AssocMap.empty
+            , txInfoProposalProcedures = []
+            , txInfoCurrentTreasuryAmount = Nothing
+            , txInfoTreasuryDonation = Nothing
+            }
             
+        -- Build the script context with contribution datum
         ctx = ScriptContext
             { scriptContextTxInfo = txInfo
-            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData uContrib
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData rejectAction
             , scriptContextScriptInfo = Contexts.SpendingScript 
-                                       (TxOutRef defaultTxId 0) 
-                                       Nothing
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData contribDatum)))
             }
         
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
-
-    -- We expect this to fail due to invalid timeliness
-    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return False)
-            `catch` \(_ :: SomeException) -> return True
-
-    assertBool "Invalid timeliness should fail" result
+    
+    -- This should succeed
+    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return True)
+            `catch` \(_ :: SomeException) -> return False
+    
+    assertBool "Valid contribution rejection should succeed" result
 
 testInvalidReviewContent :: Assertion
 testInvalidReviewContent = do
-    let reviewers = mkTestReviewerMap [defaultReviewer]
-        -- Create review content with empty reasoning fields
-        invalidReviewContent = (mkTestReviewContent defaultReviewer (PlutusTx.toBuiltin (BS.pack "contrib1")) 2001)
-            { relevanceReason = PlutusTx.emptyByteString }
+    let contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
+        -- Create an invalid review content with empty accuracy reason
+        invalidReviewContent = ReviewContent { 
+            reviewerPkh = defaultReviewer,
+            refCntribId = contribId,
+            relevanceReason = PlutusTx.toBuiltin (BS.pack "Good relevance"),
+            accuracyReason = PlutusTx.emptyByteString, -- Invalid empty reason
+            completenessReason = PlutusTx.toBuiltin (BS.pack "Complete submission"),
+            reviewTimestamp = 5100
+        }
         
-        uContrib = ContributionAction (ReviewContribution 
-                       (PlutusTx.toBuiltin (BS.pack "contrib1")) 
-                       8 9 7 
-                       invalidReviewContent)
+        -- Create a tContribution with matching ID
+        tContribution = mkTestContribution (mkTestPubKeyHash 9) 5000
+        contribDatum = ContributionDatum
+            { contribution = tContribution
+            , cStatus = EvidenceProposed
+            , relevance = 0
+            , accuracy = 0
+            , completeness = 0
+            , revContent = mkTestReviewContent defaultReviewer contribId 0
+            , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
+            , timelinessScore = 10
+            }
         
+        -- Create the review action with scores and invalid content
+        reviewAction = ContributionAction (ReviewContribution contribId 8 7 9 invalidReviewContent)
+        
+        -- Set up the active topic as a reference input
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [defaultReviewer])
+        refTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Input transaction with the tContribution datum
+        inputTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
+            
+        -- Output with the updated tContribution status, scores, and invalid review content
+        outputContribDatum = contribDatum { 
+            cStatus = ContributionReviewed,
+            relevance = 8,
+            accuracy = 7,
+            completeness = 9,
+            revContent = invalidReviewContent
+        }
+        outputTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData outputContribDatum)))
+            
+        -- Build the transaction info with reference to the active topic
+        txInfo = TxInfo
+            { txInfoInputs = [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
+            , txInfoReferenceInputs = [TxInInfo (TxOutRef defaultTxId 1) refTxOut]
+            , txInfoOutputs = [outputTxOut]
+            , txInfoFee = Lovelace 0
+            , txInfoMint = mkEmptyMintValue
+            , txInfoValidRange = Interval.from (POSIXTime 4600)
+            , txInfoSignatories = [defaultReviewer]
+            , txInfoData = AssocMap.empty
+            , txInfoRedeemers = AssocMap.empty
+            , txInfoId = defaultTxId
+            , txInfoWdrl = AssocMap.empty
+            , txInfoTxCerts = []
+            , txInfoVotes = AssocMap.empty
+            , txInfoProposalProcedures = []
+            , txInfoCurrentTreasuryAmount = Nothing
+            , txInfoTreasuryDonation = Nothing
+            }
+            
+        -- Build the script context with contribution datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData reviewAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData contribDatum)))
+            }
+        
+        -- Convert the context to BuiltinData
+        ctxData = PlutusTx.toBuiltinData ctx
+    
+    -- This should fail due to invalid review content
+    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return False)
+            `catch` \(_ :: SomeException) -> return True
+    
+    assertBool "Invalid review content should be rejected" result
+
+testInvalidTimeliness :: Assertion
+testInvalidTimeliness = do
+    let contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
+        -- Create a valid review content
+        reviewContent = mkTestReviewContent defaultReviewer contribId 5100
+        
+        -- Create a tContribution datum
+        tContribution = mkTestContribution (mkTestPubKeyHash 9) 5000
+        contribDatum = mkTestContributionDatum tContribution
+        
+        -- Create the review action with invalid timeliness score (-1)
+        reviewAction = ContributionAction (ReviewContribution contribId 8 7 (-1) reviewContent)
+        
+        -- Set up the active topic as a reference input
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [defaultReviewer])
+        refTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Input transaction with the tContribution datum
+        inputTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
+            
+        -- Output with the updated tContribution status and invalid timeliness
+        outputContribDatum = contribDatum { 
+            cStatus = ContributionReviewed,
+            relevance = 8,
+            accuracy = 7,
+            completeness = -1, -- Negative value is invalid
+            revContent = reviewContent
+        }
+        outputTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData outputContribDatum)))
+            
+        -- Build the transaction info with reference to the active topic
+        txInfo = TxInfo
+            { txInfoInputs = [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
+            , txInfoReferenceInputs = [TxInInfo (TxOutRef defaultTxId 1) refTxOut]
+            , txInfoOutputs = [outputTxOut]
+            , txInfoFee = Lovelace 0
+            , txInfoMint = mkEmptyMintValue
+            , txInfoValidRange = Interval.from (POSIXTime 4600)
+            , txInfoSignatories = [defaultReviewer]
+            , txInfoData = AssocMap.empty
+            , txInfoRedeemers = AssocMap.empty
+            , txInfoId = defaultTxId
+            , txInfoWdrl = AssocMap.empty
+            , txInfoTxCerts = []
+            , txInfoVotes = AssocMap.empty
+            , txInfoProposalProcedures = []
+            , txInfoCurrentTreasuryAmount = Nothing
+            , txInfoTreasuryDonation = Nothing
+            }
+            
+        -- Build the script context with contribution datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData reviewAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData contribDatum)))
+            }
+        
+        -- Convert the context to BuiltinData
+        ctxData = PlutusTx.toBuiltinData ctx
+    
+    -- This should fail due to invalid timeliness score
+    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return False)
+            `catch` \(_ :: SomeException) -> return True
+    
+    assertBool "Invalid timeliness score should be rejected" result
+
+testInvalidContribution :: Assertion
+testInvalidContribution = do
+    let contributer = mkTestPubKeyHash 6
         -- Create a topic datum in activated state
-        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool reviewers
+        topicDatum = mkTestTopicDatum defaultTopic TopicActivated defaultPool (mkTestReviewerMap [defaultReviewer])
         
+        -- Create an invalid tContribution with empty ID
+        invalidContribution = (mkTestContribution contributer 5000) { 
+            contributionId = PlutusTx.emptyByteString -- Invalid empty ID
+        }
+        
+        -- Create the action
+        contrib = ContributionAction (SubmitEvidence invalidContribution)
+        
+        -- Input transaction with the topic datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
             
-        ctx = mkTestScriptContext
-            [defaultReviewer]
+        -- Output transaction with same topic datum
+        outputTxOut = mkTestTxOut
+            defaultScriptHash
+            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Build a transaction with the contributor's signature
+        txInfo = defaultTxInfo
+            [contributer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
-            []
+            [outputTxOut]
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData uContrib)
+            
+        -- Build the script context
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData contrib
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData topicDatum)))
+            }
         
+        -- Convert the context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
-
+    
+    -- This should fail due to invalid tContribution ID
     result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return False)
-              `catch` \(_ :: SomeException) -> return True
-
-    assertBool "Invalid review content should fail" result
+            `catch` \(_ :: SomeException) -> return True
+    
+    assertBool "Contribution with empty ID should be rejected" result

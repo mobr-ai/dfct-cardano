@@ -53,7 +53,7 @@ defaultReviewer = mkTestPubKeyHash 4
 
 -- Helper to create a ReviewerMap
 mkTestReviewerMap :: [PubKeyHash] -> ReviewerMap
-mkTestReviewerMap pks = foldr (\pk -> AssocMap.insert pk True) AssocMap.empty pks
+mkTestReviewerMap pks = foldr (\pk -> AssocMap.insert pk 1) AssocMap.empty pks
 
 -- Helper to create a RewardMap
 mkTestRewardMap :: [(PubKeyHash, Integer)] -> RewardMap
@@ -70,6 +70,14 @@ defaultPool = mkTestRewardPool 100
 
 defaultParams :: MintingParams
 defaultParams = mkMintingParams defaultAuth defaultTokenName
+
+-- Default script purpose (for ScriptContext)
+defaultSpendingPurpose :: Contexts.ScriptPurpose
+defaultSpendingPurpose = Contexts.Spending (TxOutRef defaultTxId 0)
+
+-- Default script context with spending script info
+defaultScriptInfo :: Contexts.ScriptInfo
+defaultScriptInfo = Contexts.SpendingScript (TxOutRef defaultTxId 0) (Just (Datum (PlutusTx.toBuiltinData (mkTestTopicDatum defaultTopic TopicProposed defaultPool (mkTestReviewerMap [defaultReviewer])))))
 
 -- Fixture creators
 mkTestPubKeyHash :: Integer -> PubKeyHash
@@ -119,8 +127,8 @@ mkTestContributionDatum c = ContributionDatum
     , relevance = 0
     , accuracy = 0
     , completeness = 0
-    , reviewContents = []
-    , disputeReasons = []
+    , revContent = ReviewContent "pub_key" "rev" "reason" "accuracy" "completeness" 0
+    , dispReason = DisputeReason "pub_key" "reason" 0
     , timelinessScore = 0
     }
 
@@ -160,10 +168,10 @@ mkTestMintValue cs tn amount =
         m2 = AssocMap.singleton cs m1
     in V3.UnsafeMintValue m2
 
--- Create a ScriptContext for testing
-mkTestScriptContext :: [PubKeyHash] -> [TxInInfo] -> [TxOut] -> V3.MintValue -> Redeemer -> ScriptContext
-mkTestScriptContext signers ins outs mint redeemer = ScriptContext
-    { scriptContextTxInfo = TxInfo
+-- Default TxInfo with common settings
+defaultTxInfo :: [PubKeyHash] -> [TxInInfo] -> [TxOut] -> V3.MintValue -> TxInfo
+defaultTxInfo signers ins outs mint = 
+    TxInfo
         { txInfoInputs = ins
         , txInfoReferenceInputs = []
         , txInfoOutputs = outs
@@ -181,11 +189,22 @@ mkTestScriptContext signers ins outs mint redeemer = ScriptContext
         , txInfoCurrentTreasuryAmount = Nothing
         , txInfoTreasuryDonation = Nothing
         }
-    , scriptContextRedeemer = redeemer
-    , scriptContextScriptInfo = Contexts.SpendingScript 
-                                  (TxOutRef defaultTxId 0) 
-                                  Nothing
-    }
+
+-- Create a ScriptContext for testing with datum in script info
+mkTestScriptContext :: [PubKeyHash] -> [TxInInfo] -> [TxOut] -> V3.MintValue -> Redeemer -> ScriptContext
+mkTestScriptContext signers ins outs mint redeemer = 
+    let txInfo = defaultTxInfo signers ins outs mint
+        inputDatum = case ins of
+            (TxInInfo _ txOut):_ -> case txOutDatum txOut of
+                OutputDatum d -> Just d
+                _ -> Nothing
+            _ -> Nothing
+        scriptInfo = Contexts.SpendingScript (TxOutRef defaultTxId 0) inputDatum
+    in ScriptContext
+        { scriptContextTxInfo = txInfo
+        , scriptContextRedeemer = redeemer
+        , scriptContextScriptInfo = scriptInfo
+        }
 
 -- Common test helpers
 mkStateTransitionTest :: TopicStatus -> TopicStatus -> DFCTContrib -> [PubKeyHash] -> Bool -> Assertion

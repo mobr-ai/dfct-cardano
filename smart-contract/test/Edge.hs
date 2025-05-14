@@ -79,37 +79,6 @@ testInvalidTopicDatum = do
 
     assertBool "Invalid topic datum should fail" result
 
-testInvalidContribution :: Assertion
-testInvalidContribution = do
-    let contributor = mkTestPubKeyHash 6
-        invalidContrib = (mkTestContribution contributor 2000) { contributionId = PlutusTx.toBuiltin (BS.pack "") }
-        datum = mkTestTopicDatum defaultTopic TopicActivated defaultPool AssocMap.empty
-        contrib = ContributionAction (SubmitEvidence invalidContrib)
-        inputTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-        outputDatum = mkTestContributionDatum invalidContrib
-        outputTxOut = mkTestTxOut
-            defaultScriptHash
-            (Value.singleton defaultCurrencySymbol defaultTokenName 100)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData outputDatum)))
-        ctx = mkTestScriptContext
-            [contributor]
-            [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
-            [outputTxOut]
-            mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
-        
-        -- Convert context to BuiltinData
-        ctxData = PlutusTx.toBuiltinData ctx
-
-    -- Evaluate the validator expression and catch the expected exception
-    result <- (evaluate (mkDFCTValidator defaultCurrencySymbol ctxData) >> return False)
-              `catch` \(_ :: SomeException) -> return True
-
-    assertBool "Invalid contribution should fail" result
-
 testInvalidRewardPool :: Assertion
 testInvalidRewardPool = do
     let invalidPool = RewardPoolInfo (-100) 0 defaultTokenName 0

@@ -162,6 +162,7 @@ docker run --platform linux/amd64 -d --name cardano-node-preview \
   --host-addr 0.0.0.0 \
   --port 3001
 
+
 #OR check if it is running if you had it before
 docker ps --filter "name=cardano-node-preview"
 ```
@@ -280,10 +281,10 @@ docker exec -it cardano-node-preview cardano-cli query utxo \
 #create a utxo to use as collateral if you do not have one yet"
 docker exec -it cardano-node-preview cardano-cli latest transaction build \
    --testnet-magic 2 \
+   --socket-path /data/node.socket \
    --change-address $(cat ../backend/assets/owner.addr) \
    --tx-in <replace-with-existing-utxo-from-faucet> \
    --tx-out "$(cat ../backend/assets/owner.addr) + 5000000 lovelace" \
-   --socket-path /data/node.socket \
    --out-file /assets/tx-collateral.body
 
 docker exec -it cardano-node-preview cardano-cli latest transaction sign \
@@ -310,16 +311,18 @@ docker exec -it cardano-node-preview cardano-cli query utxo \
   --testnet-magic 2 \
   --socket-path /data/node.socket
 
-#execute the generated script to mint 10000 dfc
+#execute the generated script to mint 100000 dfc
 ./mint-dfc.sh ../backend/assets/owner.addr
 
-#visit https://preview.cardanoscan.io/address/<<onwer.addr>>>> to see DFC tokens in the owner account
+# wait for the transaction to be confirmed and 
+# visit cardanoscan to see DFC tokens in the owner account
+# https://preview.cardanoscan.io/address/<<onwer.addr>>>>
 
-#execute the generated script to deploy provenance validator
-./deploy-dfct-pv.sh
+#send topic datum, ADA and DFC tokens from proposer to provenance validator script created at
+./submit-topic-utxo.sh
 
-#send first topic datum, ADA and DFC tokens to provenance validator
-./dfct-prov-first.sh
+#submit topic using utxo created at ./submit-topic-utxo.sh
+./submit-topic.sh
 ```
 
 ## Testing
@@ -329,7 +332,7 @@ docker exec -it cardano-node-preview cardano-cli query utxo \
 #### Testing locally:
 
 ```bash
-cd smart-contract
+#still in the smart-contract folder call cabal test:
 cabal test --test-show-details=streaming --test-option=--color=always
 ```
 
@@ -374,6 +377,10 @@ docker run --platform linux/amd64 -d --name ogmios \
   --node-config /config/config.json \
   --node-socket /data/node.socket \
   --host 0.0.0.0
+
+
+#OR check if it is running if you had it before
+docker ps --filter "name=ogmios"
 ```
 
 1. Create and set a virtualenv and install dependencies with Poetry:
@@ -395,7 +402,7 @@ poetry install
 2. Start the server:
 
 ```bash
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn dfctbackend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### API Endpoints
@@ -420,6 +427,19 @@ uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ### API Documentation
 
 The API documentation is available at `/docs` or `/redoc` when the server is running.
+
+Before using the API, make sure to fund the owner, proposer, reviewer1, and reviewer2 addr using cardano preview faucet
+https://docs.cardano.org/cardano-testnets/tools/faucet
+
+Mint dfc tokens to these accounts using the mint-dfc script:
+```bash
+cd ../smart-contract
+./mint-dfc.sh ../backend/assets/owner.addr
+./mint-dfc.sh ../backend/assets/proposer.addr
+./mint-dfc.sh ../backend/assets/reviewer1.addr
+./mint-dfc.sh ../backend/assets/reviewer2.addr
+cd -
+```
 
 ### Testing
 The project includes a comprehensive test suite covering all major components. The tests use pytest and are organized by module.
@@ -457,7 +477,7 @@ dfct/
 │   ├── src/               # Smart contract source code
 │   └── test/              # Smart contract tests
 └── backend/               # Python FastAPI backend
-    ├── src/               # Backend source code
+    ├── dfctbackend/       # Backend source code
     ├── tests/             # Backend tests
     └── assets/            # Compiled Plutus scripts, keys, json
 

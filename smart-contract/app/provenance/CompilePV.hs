@@ -16,11 +16,11 @@ import DFCT.Provenance (mkDFCTValidator)
 
 -- replace with policy id
 dfcSymbol :: CurrencySymbol
-dfcSymbol = CurrencySymbol $ "ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa"
+dfcSymbol = CurrencySymbol "ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa"
 
 {-# INLINABLE mkWrappedValidator #-}
 mkWrappedValidator :: BuiltinData -> BuiltinUnit
-mkWrappedValidator = mkDFCTValidator dfcSymbol
+mkWrappedValidator ctx = mkDFCTValidator dfcSymbol ctx
 
 validator :: CompiledCode (BuiltinData -> BuiltinUnit)
 validator = $$(PlutusTx.compile [|| mkWrappedValidator ||])

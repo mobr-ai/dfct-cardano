@@ -37,7 +37,7 @@ import qualified PlutusTx
 import           PlutusTx.Prelude         hiding (Semigroup (..), unless)
 import qualified PlutusTx.AssocMap as Map
 
-type ReviewerMap = Map.Map PubKeyHash Bool
+type ReviewerMap = Map.Map PubKeyHash Integer
 type RewardMap   = Map.Map PubKeyHash Integer
 
 data TopicStatus = TopicProposed
@@ -165,8 +165,8 @@ data ContributionDatum = ContributionDatum
     , relevance          :: Integer
     , accuracy           :: Integer
     , completeness       :: Integer
-    , reviewContents     :: [ReviewContent]   --  Store detailed review reasoning
-    , disputeReasons     :: [DisputeReason]   --  Store dispute history
+    , revContent         :: ReviewContent   --  Store detailed review reasoning
+    , dispReason         :: DisputeReason   --  Store dispute history
     , timelinessScore    :: Integer           --  Track timeliness for bonus calculation
     } deriving (Generic)
 
@@ -174,7 +174,7 @@ PlutusTx.makeIsDataIndexed ''ContributionDatum [('ContributionDatum, 0)]
 PlutusTx.makeLift ''ContributionDatum
 
 data TopicAction = SubmitTopic Topic RewardPoolInfo
-                 | ReviewTopic BuiltinByteString Bool
+                 | ReviewTopic BuiltinByteString Integer
                  | ActivateTopic BuiltinByteString
                  | CloseTopic BuiltinByteString
                  | RejectTopic BuiltinByteString

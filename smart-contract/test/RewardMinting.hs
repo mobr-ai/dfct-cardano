@@ -33,7 +33,8 @@ testRewardDistributionValid = do
         pool = mkTestRewardPool 100
         topicDatum = mkTestTopicDatum (defaultTopic { topicId = topicId1 }) TopicActivated pool Map.empty
         
-        contrib = mkTestDistributeRewards topicId1 [(contrib1, 40), (contrib2, 30)]
+        -- Create the reward distribution action
+        contrib = AdminAction (DistributeRewards topicId1 (mkTestRewardMap [(contrib1, 40), (contrib2, 30)]))
         
         -- Input transaction containing the topic datum
         inputTxOut = mkTestTxOut
@@ -52,12 +53,21 @@ testRewardDistributionValid = do
                     NoOutputDatum
                ]
         
-        ctx = mkTestScriptContext
+        -- Build the transaction info
+        txInfo = defaultTxInfo
             [defaultProposer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             outs
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+            
+        -- Build the script context with proper datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData contrib
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData topicDatum)))
+            }
         
         -- Convert context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
@@ -72,19 +82,34 @@ testRewardDistributionOverflow = do
     let contrib1 = mkTestPubKeyHash 4
         contrib2 = mkTestPubKeyHash 5
         smallPool = mkTestRewardPool 50
-        emptyReviewers = Map.empty
-        datum = mkTestTopicDatum defaultTopic TopicActivated smallPool emptyReviewers
-        contrib = mkTestDistributeRewards (PlutusTx.toBuiltin (BS.pack "topic1")) [(contrib1, 40), (contrib2, 30)]
+        topicId1 = PlutusTx.toBuiltin (BS.pack "topic1")
+        
+        -- Create a topic datum with a small reward pool
+        topicDatum = mkTestTopicDatum (defaultTopic { topicId = topicId1 }) TopicActivated smallPool Map.empty
+        
+        -- Create a reward distribution action that exceeds the pool
+        contrib = AdminAction (DistributeRewards topicId1 (mkTestRewardMap [(contrib1, 40), (contrib2, 30)]))
+        
+        -- Input transaction with the topic datum
         inputTxOut = mkTestTxOut
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 50)
-            (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-        ctx = mkTestScriptContext
+            (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
+            
+        -- Build the script context with proper datum
+        txInfo = defaultTxInfo
             [defaultProposer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             []
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData contrib)
+            
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData contrib
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData topicDatum)))
+            }
         
         -- Convert context to BuiltinData
         ctxData = PlutusTx.toBuiltinData ctx
@@ -282,12 +307,21 @@ testCheckPoolValid = do
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
             
-        ctx = mkTestScriptContext
+        -- Build the transaction info
+        txInfo = defaultTxInfo
             [defaultProposer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             []
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData checkPoolAction)
+            
+        -- Build the script context with proper datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData checkPoolAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData topicDatum)))
+            }
         
         ctxData = PlutusTx.toBuiltinData ctx
 
@@ -311,12 +345,21 @@ testCheckPoolInvalidTopic = do
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData topicDatum)))
             
-        ctx = mkTestScriptContext
+        -- Build the transaction info
+        txInfo = defaultTxInfo
             [defaultProposer]
             [TxInInfo (TxOutRef defaultTxId 0) inputTxOut]
             []
             mkEmptyMintValue
-            (Redeemer $ PlutusTx.toBuiltinData checkPoolAction)
+            
+        -- Build the script context with proper datum
+        ctx = ScriptContext
+            { scriptContextTxInfo = txInfo
+            , scriptContextRedeemer = Redeemer $ PlutusTx.toBuiltinData checkPoolAction
+            , scriptContextScriptInfo = Contexts.SpendingScript 
+                                      (TxOutRef defaultTxId 0) 
+                                      (Just (Datum (PlutusTx.toBuiltinData topicDatum)))
+            }
         
         ctxData = PlutusTx.toBuiltinData ctx
 

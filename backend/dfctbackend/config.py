@@ -5,17 +5,18 @@ from binascii import Error as HexError
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables with fallbacks."""
-    
+
     # Pydantic V2 config using SettingsConfigDict
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore"
     )
-    
+
     # Base paths
-    ASSETS_DIR: Path = Path("assets")
-    
+    ASSETS_DIR: Path = Path("assets").absolute()
+    DOCKER_ASSETS_DIR: str = "/assets"
+
     # Cardano node configuration
     CARDANO_NETWORK: str = "preview"
     CARDANO_NODE_HOST: str = "localhost"
@@ -51,7 +52,6 @@ class Settings(BaseSettings):
                     self.VALIDATOR_ADDRESS = f.read().strip()
             else:
                 raise ValueError('Validator address is a requirement')
-
 
 # Create a global settings instance
 settings = Settings()
