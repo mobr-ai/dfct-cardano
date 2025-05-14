@@ -2,7 +2,7 @@
 
 DFCT (Decentralized Fact-Checking Toolkit) is a platform that redefines fact-checking by structuring and supporting collaborative verification processes. The platform leverages the Cardano ecosystem to promote transparency, scalability, and active community participation, incentivizing contributions with the DFCT Cardano Native Token (CNT).
 
-This project contains three main components:
+This project contains the following main components:
 1. Plutus Smart Contract for the Cardano blockchain
 2. Python FastAPI Backend
 
@@ -10,7 +10,8 @@ This project contains three main components:
 ## Prerequisites
 
 - [Docker](https://www.docker.com/) and Docker Compose (28.0.4)
-- [GHC](https://www.haskell.org/ghc/) (9.6.4) and [Cabal](https://www.haskell.org/cabal/) (3.10.3.0) for Plutus development
+- [GHC](https://www.haskell.org/ghc/) (9.6.4)
+- [Cabal](https://www.haskell.org/cabal/) (3.10.3.0) for Plutus development
 - [Python](https://www.python.org/) (3.11.6)
 - [Poetry](https://python-poetry.org/) (2.1.1)
 
