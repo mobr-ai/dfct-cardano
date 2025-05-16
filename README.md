@@ -462,10 +462,13 @@ poetry run pytest -m integration
 poetry run pytest tests/cardano/test_wallet.py
 ```
 
-Test categories:
-
-Unit tests: Tests for individual components (models, utils, configuration)
-Integration tests: Tests for component interactions (API routes, contract interactions)
+Integration test using provenance on testnet
+```bash
+# Owner, proposer, reviewer1, and reviewer2 must have:
+# funds from faucet
+# DFC tokens from mint script
+poetry run python integration_test.py
+```
 
 
 ## Project Structure
