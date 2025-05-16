@@ -312,7 +312,7 @@ docker exec -it cardano-node-preview cardano-cli query utxo \
   --testnet-magic 2 \
   --socket-path /data/node.socket
 
-#execute the generated script to mint 100000 dfc
+#execute the generated script to mint 1000000 dfc
 ./mint-dfc.sh ../backend/assets/owner.addr
 
 # wait for the transaction to be confirmed and 
@@ -320,6 +320,7 @@ docker exec -it cardano-node-preview cardano-cli query utxo \
 # https://preview.cardanoscan.io/address/<<onwer.addr>>>>
 
 #send topic datum, ADA and DFC tokens from proposer to provenance validator script created at
+#fund proposer (faucet) and create collateral utxo before execution this example.
 ./submit-topic-utxo.sh
 
 #submit topic using utxo created at ./submit-topic-utxo.sh
