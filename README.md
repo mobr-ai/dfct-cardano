@@ -471,9 +471,7 @@ Integration tests: Tests for component interactions (API routes, contract intera
 
 ```
 dfct/
-├── README.md
-├── .gitignore
-├── docker-compose.yml
+│
 ├── smart-contract/        # Plutus smart contracts
 │   ├── src/               # Smart contract source code
 │   └── test/              # Smart contract tests
