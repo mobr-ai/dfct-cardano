@@ -224,7 +224,7 @@ https://docs.cardano.org/cardano-testnets/tools/faucet
 cat ../backend/assets/owner.addr
 ```
 
-3. Build and create minting policy id:
+4. Build and create minting policy id:
 
 **ATTENTION**: Update app/mint/CompileMP.hs with owner.pkh so the owner becomes the DFC token minting authority
 
@@ -246,7 +246,7 @@ mv dfct-minting-policy.plutus ../backend/assets
 docker exec -it cardano-node-preview cardano-cli latest transaction policyid --script-file /assets/dfct-minting-policy.plutus > ../backend/assets/dfct-minting-policy.id
 ```
 
-4. Create validator plutus file:
+5. Create validator plutus file:
 
 **ATTENTION**: Update the dfcSymbol of app/provenance/CompilePV.hs with the dfct-minting-policy.id value
 
@@ -261,7 +261,7 @@ mv dfct-provenance.plutus ../backend/assets
 docker exec -it cardano-node-preview cardano-cli address build --payment-script-file /assets/dfct-provenance.plutus --testnet-magic 2 --out-file /assets/dfct-provenance.addr
 ```
 
-5. Deploy on testnet
+6. Deploy on testnet
 
 ```bash
 #first, wait until cardano-node is synced (check progress and block number: https://preview.cardanoscan.io/)
