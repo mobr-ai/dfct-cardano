@@ -486,3 +486,7 @@ dfct/
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+=======
+# d-FCT on Cardano
+d-FCT (Decentralized Fact-Checking Toolkit), pronounced _de facto_, is a platform aiming at redefining fact-checking by structuring and supporting collaborative verification processes. The platform will leverage the Cardano ecosystem to promote transparency, scalability, and active community participation, while incentivizing contributions with its own Cardano Native Token (CNT). d-FCT’s goal is to build a high-trust environment for addressing the search for structured evidence, by combining AI processing and collective validation with tokenized rewards.
+
