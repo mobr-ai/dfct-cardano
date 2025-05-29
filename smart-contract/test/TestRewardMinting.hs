@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module RewardMinting where
+module TestRewardMinting where
 
 import DFCT.MintingPolicy
 import DFCT.Provenance

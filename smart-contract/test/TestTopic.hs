@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Topic where
+module TestTopic where
 
 import DFCT.Provenance
 import DFCT.Types
