@@ -8,12 +8,12 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import DFCT.Types ()
-import Topic
-import Contrib
-import RewardMinting
-import StateTransition
-import Edge
-
+import TestTopic
+import TestContrib
+import TestRewardMinting
+import TestStateTransition
+import TestEdge
+import TestGovernance
 
 main :: IO ()
 main = defaultMain tests
@@ -62,5 +62,34 @@ tests = testGroup "DFCT Smart Contract Tests"
     , testGroup "Admin Functions"
         [ testCase "Check pool with valid topic ID succeeds" testCheckPoolValid
         , testCase "Check pool with invalid topic ID fails" testCheckPoolInvalidTopic
+        ]
+    , testGroup "Governance Core"
+      [ testCase "Proposal submission by owner succeeds" testProposalSubmissionOwner
+      , testCase "Proposal submission by authorized PKH succeeds" testProposalSubmissionAuthorized
+      , testCase "Proposal submission with invalid ID fails" testProposalSubmissionInvalidId
+      , testCase "Proposal submission by unauthorized PKH fails" testProposalSubmissionUnauthorized
+      ]
+    , testGroup "Governance Voting Logic"
+        [ testCase "Vote by eligible voter succeeds" testVoteValid
+        , testCase "Vote with insufficient tokens fails" testVoteInsufficientTokens
+        , testCase "Duplicate vote fails" testVoteDuplicate
+        , testCase "Vote outside voting period fails" testVoteOutsidePeriod
+        ]
+    , testGroup "Governance Parameter Updates"
+        [ testCase "Update authorized PKHs by owner succeeds" testUpdateAuthorizedPKHsValid
+        , testCase "Update authorized PKHs by non-owner fails" testUpdateAuthorizedPKHsNonOwner
+        , testCase "Update min voting tokens by owner succeeds" testUpdateMinVotingTokensValid
+        , testCase "Update min voting tokens with zero fails" testUpdateMinVotingTokensInvalid
+        ]
+    , testGroup "Governance State Transitions"
+        [ testCase "Set voting period for proposed proposal succeeds" testSetVotingPeriodValid
+        , testCase "Finalize proposal as approved succeeds" testFinalizeProposalApproved
+        , testCase "Execute approved proposal succeeds" testExecuteProposalValid
+        , testCase "Invalid transition from proposed to executed fails" testInvalidStateTransition
+        ]
+    , testGroup "Governance Edge Cases"
+        [ testCase "Empty authorized PKHs map fails" testEmptyAuthorizedPKHs
+        , testCase "Invalid proposal datum is rejected" testInvalidProposalDatum
+        , testCase "Vote with invalid value fails" testInvalidVoteValue
         ]
     ]

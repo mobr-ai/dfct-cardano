@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module StateTransition where
+module TestStateTransition where
 
 import DFCT.Provenance
 import DFCT.Types hiding (Contribution)

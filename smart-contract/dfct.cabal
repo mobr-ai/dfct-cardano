@@ -13,9 +13,10 @@ common defaults
 
 library
   import:           defaults
-  exposed-modules:  DFCT.Provenance
-                    DFCT.MintingPolicy
+  exposed-modules:  DFCT.MintingPolicy
+                    DFCT.Provenance
                     DFCT.Types
+                    DFCT.Governance
   hs-source-dirs:   src
   build-depends:    cardano-ledger-conway
                   , serialise
@@ -30,11 +31,12 @@ test-suite dfct-tests
   main-is:          Spec.hs
   hs-source-dirs:   test
   other-modules:    TestFixtures
-                    Topic
-                    Contrib
-                    RewardMinting
-                    StateTransition
-                    Edge
+                    TestTopic
+                    TestContrib
+                    TestRewardMinting
+                    TestStateTransition
+                    TestGovernance
+                    TestEdge
   build-depends:    dfct
                   , cardano-ledger-conway
                   , plutus-core
@@ -65,6 +67,20 @@ executable dfct-provenance
   import:           defaults
   main-is:          CompilePV.hs
   hs-source-dirs:   app/provenance
+  build-depends:    cardano-ledger-conway
+                  , dfct
+                  , serialise
+                  , plutus-core
+                  , plutus-ledger-api
+                  , plutus-tx
+                  , plutus-tx-plugin
+                  , aeson
+  ghc-options:      -threaded -fplugin=PlutusTx.Plugin -fplugin-opt=PlutusTx.Plugin:defer-errors
+
+executable dfct-governance
+  import:           defaults
+  main-is:          CompileGV.hs
+  hs-source-dirs:   app/governance
   build-depends:    cardano-ledger-conway
                   , dfct
                   , serialise

@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Edge where
+module TestEdge where
 
 import DFCT.Provenance
 import DFCT.Types
