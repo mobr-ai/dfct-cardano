@@ -15,6 +15,7 @@
 
 module DFCT.Types
     ( TopicStatus(..)
+    , ContributionType(..)
     , ContributionStatus(..)
     , Topic(..)
     , Contribution(..)
@@ -58,9 +59,21 @@ instance Eq TopicStatus where
 PlutusTx.makeIsDataIndexed ''TopicStatus [('TopicProposed, 0), ('TopicReviewed, 1), ('TopicActivated, 2), ('TopicClosed, 3), ('TopicRejected, 4)]
 PlutusTx.makeLift ''TopicStatus
 
-data ContributionStatus = EvidenceProposed
-                        | VerdictTagSelected
-                        | VoteCasted
+data ContributionType = Evidence
+                      | TagSelection
+                      | VoteCasted
+                      deriving (Generic)
+
+instance Eq ContributionType where
+    (==) Evidence Evidence = True
+    (==) TagSelection TagSelection = True
+    (==) VoteCasted VoteCasted = True
+    (==) _ _ = False
+
+PlutusTx.makeIsDataIndexed ''ContributionType [('Evidence, 0), ('TagSelection, 1), ('VoteCasted, 2)]
+PlutusTx.makeLift ''ContributionType
+
+data ContributionStatus = ContributionProposed
                         | ContributionReviewed
                         | ContributionDisputed
                         | ContributionUpdated
@@ -72,9 +85,7 @@ data ContributionStatus = EvidenceProposed
                         deriving (Generic)
 
 instance Eq ContributionStatus where
-    (==) EvidenceProposed EvidenceProposed = True
-    (==) VerdictTagSelected VerdictTagSelected = True
-    (==) VoteCasted VoteCasted = True
+    (==) ContributionProposed ContributionProposed = True
     (==) ContributionReviewed ContributionReviewed = True
     (==) ContributionDisputed ContributionDisputed = True
     (==) ContributionUpdated ContributionUpdated = True
@@ -85,10 +96,16 @@ instance Eq ContributionStatus where
     (==) PoolEvaluated PoolEvaluated = True
     (==) _ _ = False
 
-PlutusTx.makeIsDataIndexed ''ContributionStatus [('EvidenceProposed, 0), ('VerdictTagSelected, 1), ('VoteCasted, 2), 
-                                               ('ContributionReviewed, 3), ('ContributionDisputed, 4), ('ContributionUpdated, 5),
-                                               ('ContributionRejected, 6), ('ContributionVerified, 7), ('ContributionEvaluated, 8),
-                                               ('RewardsDistributed, 9), ('PoolEvaluated, 10)]
+PlutusTx.makeIsDataIndexed ''ContributionStatus [
+    ('ContributionProposed, 0),
+    ('ContributionReviewed, 1),
+    ('ContributionDisputed, 2),
+    ('ContributionUpdated, 3),
+    ('ContributionRejected, 4),
+    ('ContributionVerified, 5),
+    ('ContributionEvaluated, 6),
+    ('RewardsDistributed, 7),
+    ('PoolEvaluated, 8)]
 PlutusTx.makeLift ''ContributionStatus
 
 data Topic = Topic
@@ -105,7 +122,7 @@ PlutusTx.makeLift ''Topic
 data Contribution = Contribution
     { contributionId        :: BuiltinByteString
     , contributionTopicId   :: BuiltinByteString
-    , contributionType      :: BuiltinByteString
+    , contributionType      :: ContributionType
     , contributionContent   :: BuiltinByteString
     , contributionCreator   :: PubKeyHash
     , contributionTimestamp :: Integer
@@ -116,7 +133,6 @@ data Contribution = Contribution
 PlutusTx.makeIsDataIndexed ''Contribution [('Contribution, 0)]
 PlutusTx.makeLift ''Contribution
 
---  Store review content with reasoning
 data ReviewContent = ReviewContent
     { reviewerPkh         :: PubKeyHash
     , refCntribId         :: BuiltinByteString  -- reference to the contribution being reviewed
@@ -129,7 +145,6 @@ data ReviewContent = ReviewContent
 PlutusTx.makeIsDataIndexed ''ReviewContent [('ReviewContent, 0)]
 PlutusTx.makeLift ''ReviewContent
 
---  Store dispute reasons
 data DisputeReason = DisputeReason
     { disputeInitiator  :: PubKeyHash
     , disputeContent    :: BuiltinByteString
@@ -161,13 +176,14 @@ PlutusTx.makeLift ''TopicDatum
 
 data ContributionDatum = ContributionDatum
     { contribution       :: Contribution
+    , cType              :: ContributionType
     , cStatus            :: ContributionStatus
     , relevance          :: Integer
     , accuracy           :: Integer
     , completeness       :: Integer
     , revContent         :: ReviewContent   --  Store detailed review reasoning
     , dispReason         :: DisputeReason   --  Store dispute history
-    , timelinessScore    :: Integer           --  Track timeliness for bonus calculation
+    , timelinessScore    :: Integer         --  Track timeliness for bonus calculation
     } deriving (Generic)
 
 PlutusTx.makeIsDataIndexed ''ContributionDatum [('ContributionDatum, 0)]
@@ -188,27 +204,23 @@ PlutusTx.makeIsDataIndexed ''TopicAction [
     ('RejectTopic, 4)]
 PlutusTx.makeLift ''TopicAction
 
-data ContributionAction = SubmitEvidence Contribution
-                        | CastVote Contribution
-                        | SelectTag Contribution
-                        | ReviewContribution BuiltinByteString Integer Integer Integer ReviewContent -- Enhanced with ReviewContent
+data ContributionAction = SubmitContribution Contribution
+                        | ReviewContribution BuiltinByteString Integer Integer Integer ReviewContent
                         | VerifyContribution BuiltinByteString
-                        | DisputeContribution BuiltinByteString DisputeReason -- Enhanced with DisputeReason
+                        | DisputeContribution BuiltinByteString DisputeReason
                         | UpdateContribution BuiltinByteString BuiltinByteString
                         | RejectContribution BuiltinByteString
                         | EvaluateContribution BuiltinByteString
                         deriving (Generic)
 
 PlutusTx.makeIsDataIndexed ''ContributionAction [
-    ('SubmitEvidence, 0),
-    ('CastVote, 1),
-    ('SelectTag, 2),
-    ('ReviewContribution, 3),
-    ('VerifyContribution, 4),
-    ('DisputeContribution, 5),
-    ('UpdateContribution, 6),
-    ('RejectContribution, 7),
-    ('EvaluateContribution, 8)]
+    ('SubmitContribution, 0),
+    ('ReviewContribution, 1),
+    ('VerifyContribution, 2),
+    ('DisputeContribution, 3),
+    ('UpdateContribution, 4),
+    ('RejectContribution, 5),
+    ('EvaluateContribution, 6)]
 PlutusTx.makeLift ''ContributionAction
 
 data AdminAction = CheckPool BuiltinByteString

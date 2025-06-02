@@ -62,7 +62,7 @@ async def get_config():
     """Get configuration information."""
     return {
         "policy_id": settings.POLICY_ID,
-        "validator_address": settings.VALIDATOR_ADDRESS,
+        "provenance_address": settings.PROVENANCE_ADDRESS,
         "token_name": settings.TOKEN_NAME,
     }
 
