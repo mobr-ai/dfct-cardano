@@ -1,5 +1,7 @@
-from typing import Optional, List
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+from dfctbackend.cardano.datum import ContributionType
 
 class TopicSubmitRequest(BaseModel):
     """Request model for submitting a new topic."""
@@ -48,7 +50,8 @@ class ContributionSubmitRequest(BaseModel):
     
     topic_id: str = Field(description="ID of the topic to contribute to")
     content: str = Field(description="Content of the contribution")
-    evidence_links: List[str] = Field(default=[], description="Links to evidence supporting the contribution")
+    contribution_type: ContributionType = Field(default=ContributionType.EVIDENCE, description="Type of contribution")
+    evidence_links: list[str] = Field(default=[], description="Links to evidence supporting the contribution")
 
 class ContributionReviewRequest(BaseModel):
     """Request model for reviewing a contribution."""
@@ -73,6 +76,45 @@ class ContributionDisputeRequest(BaseModel):
     
     contribution_id: str = Field(description="ID of the contribution being disputed")
     dispute_reason: str = Field(description="Reason for disputing the contribution")
+
+class ProposalSubmitRequest(BaseModel):
+    """Request model for submitting a new governance proposal."""
+    model_config = ConfigDict(
+        title="Proposal Submission Request",
+        extra="forbid"
+    )
+    
+    title: str = Field(description="Title of the proposal")
+    description: str = Field(description="Description of the proposal")
+    lovelace_amount: int = Field(default=10000000, description="Amount of lovelace to fund the proposal")
+    reward_amount: int = Field(default=5000, description="Amount of DFC tokens for the proposal")
+
+    @field_validator('reward_amount')
+    @classmethod
+    def reward_must_be_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError('Reward amount must be positive')
+        return v
+
+class VoteRequest(BaseModel):
+    """Request model for voting on a governance proposal."""
+    model_config = ConfigDict(
+        title="Vote Request",
+        extra="forbid"
+    )
+
+    proposal_id: str = Field(description="ID of the proposal to vote on")
+    vote: bool = Field(description="True for yes, False for no")
+    dfc_amount: int = Field(ge=1, description="Amount of DFC tokens to vote with")
+
+class FinalizeProposalRequest(BaseModel):
+    """Request model for finalizing a governance proposal."""
+    model_config = ConfigDict(
+        title="Finalize Proposal Request",
+        extra="forbid"
+    )
+    
+    proposal_id: str = Field(description="ID of the proposal to finalize")
 
 class TransactionResponse(BaseModel):
     """Response model for transactions."""

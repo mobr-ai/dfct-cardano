@@ -112,7 +112,7 @@ mkTestContribution :: PubKeyHash -> Integer -> Contribution
 mkTestContribution creator timestamp = Contribution
     { contributionId = PlutusTx.toBuiltin (BS.pack "contrib1")
     , contributionTopicId = PlutusTx.toBuiltin (BS.pack "topic1")
-    , contributionType = PlutusTx.toBuiltin (BS.pack "evidence")
+    , contributionType = Evidence
     , contributionContent = PlutusTx.toBuiltin (BS.pack "Test evidence")
     , contributionCreator = creator
     , contributionTimestamp = timestamp
@@ -123,7 +123,8 @@ mkTestContribution creator timestamp = Contribution
 mkTestContributionDatum :: Contribution -> ContributionDatum
 mkTestContributionDatum c = ContributionDatum
     { contribution = c
-    , cStatus = EvidenceProposed
+    , cType = contributionType c
+    , cStatus = ContributionProposed
     , relevance = 0
     , accuracy = 0
     , completeness = 0

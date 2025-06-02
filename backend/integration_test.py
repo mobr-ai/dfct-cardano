@@ -3,7 +3,7 @@ import time
 import sys
 
 from dfctbackend.cardano.wallet import CardanoWallet, local_wallets
-from dfctbackend.cardano.contract import ProvenanceContract, ContractError, TopicStatus, ContributionStatus
+from backend.dfctbackend.cardano.provenance_contract import ProvenanceContract, ContractError, TopicStatus, ContributionStatus
 from dfctbackend.cardano.transaction import CardanoTransaction, MAX_ATTEMPTS, WAIT_DATA_SYNC
 
 # Configure logging
@@ -225,11 +225,11 @@ def main():
 
         contribution_data_initial = contract.get_contribution(contribution_id)
         if contribution_data_initial:
-            if contribution_data_initial["status"] == ContributionStatus.EVIDENCE_PROPOSED:
+            if contribution_data_initial["status"] == ContributionStatus.PROPOSED:
                 break
 
     assert contribution_data_initial is not None, f"Contribution with ID {contribution_id} not found"
-    assert contribution_data_initial["status"] == ContributionStatus.EVIDENCE_PROPOSED, f"Unexpected contribution status: {contribution_data_initial['status']}"
+    assert contribution_data_initial["status"] == ContributionStatus.PROPOSED, f"Unexpected contribution status: {contribution_data_initial['status']}"
     logger.info(f"Contribution initial status: {contribution_data_initial['status']}")
 
     ###
@@ -257,12 +257,12 @@ def main():
 
         contribution_after_review = contract.get_contribution(contribution_id)
         if contribution_after_review:
-            if contribution_after_review["status"] == ContributionStatus.CONTRIBUTION_REVIEWED:
+            if contribution_after_review["status"] == ContributionStatus.REVIEWED:
                 break
 
     contribution_after_review = contract.get_contribution(contribution_id)
     assert contribution_after_review is not None, "Contribution not found after review"
-    assert contribution_after_review["status"] == ContributionStatus.CONTRIBUTION_REVIEWED, f"Unexpected status after review: {contribution_after_review['status']}"
+    assert contribution_after_review["status"] == ContributionStatus.REVIEWED, f"Unexpected status after review: {contribution_after_review['status']}"
     assert contribution_after_review["relevance"] == 8, f"Relevance score not updated correctly: {contribution_after_review['relevance']}"
     assert contribution_after_review["accuracy"] == 7, f"Accuracy score not updated correctly: {contribution_after_review['accuracy']}"
     assert contribution_after_review["completeness"] == 6, f"Completeness score not updated correctly: {contribution_after_review['completeness']}"

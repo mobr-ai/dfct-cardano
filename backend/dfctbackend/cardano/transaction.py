@@ -1,9 +1,5 @@
 from typing import Union
 import logging
-import time
-import json
-import subprocess
-import os
 
 from pycardano import (
     Address, ScriptHash, UTxO
@@ -13,6 +9,7 @@ from dfctbackend.config import settings
 from dfctbackend.cardano.context import get_chain_context
 from dfctbackend.cardano.utils import load_plutus_script, str_to_hex, load_raw_file
 from dfctbackend.cardano.wallet import CardanoWallet
+from dfctbackend.cardano.cardano_cli import CardanoCli
 
 logger = logging.getLogger(__name__)
 
@@ -28,21 +25,14 @@ class TransactionError(Exception):
 
 class CardanoTransaction:
     """
-    Class for interacting with Cardano transactions using PyCardano and cardano-cli.
+    Class for interacting with Cardano transactions using PyCardano.
     """
     def __init__(self):
         """Initialize with chain context and load scripts."""
         self.context = get_chain_context()
-        self.testnet_magic = 2
-        self.socket_path = "/data/node.socket"
+        self.cli = CardanoCli()
         self.assets_path = settings.ASSETS_DIR
-        self.docker_container = "cardano-node-preview"
-        self.docker_assets = settings.DOCKER_ASSETS_DIR
-        self.validator_path = settings.ASSETS_DIR / "dfct-provenance.plutus"
-        self.validator_address_path = settings.ASSETS_DIR / "dfct-provenance.addr"
-        self.policy_path = settings.ASSETS_DIR / "dfct-minting-policy.plutus"
-        self.policy_id_path = settings.ASSETS_DIR / "dfct-minting-policy.id"
-        self.validator_address = Address.from_primitive(settings.VALIDATOR_ADDRESS)
+        self.provenance_address = Address.from_primitive(settings.PROVENANCE_ADDRESS)
         self.policy_id = settings.POLICY_ID
         self.token_name = settings.TOKEN_NAME
 
@@ -55,34 +45,24 @@ class CardanoTransaction:
 
         # Build transaction to create utxo
         params = [
-            "latest", "transaction", "build",
-            "--testnet-magic", str(self.testnet_magic),
-            "--socket-path", self.socket_path,
+            "--testnet-magic", str(self.cli.testnet_magic),
+            "--socket-path", self.cli.socket_path,
             "--change-address", wallet_addr_str,
             "--tx-in", tx_in,
             "--tx-out", f"\"{wallet_addr_str} + {new_utxo_amount} lovelace\"",
-            "--out-file", f"{self.docker_assets}/new-utxo.body"
+            "--out-file", f"{self.cli.docker_assets}/new-utxo.body"
         ]
-        self.run_cardano_cli(params)
+        self.cli.build_transaction(params)
 
         # Sign transaction to create utxo
-        params = [
-            "latest", "transaction", "sign",
-            "--tx-body-file", f"{self.docker_assets}/new-utxo.body",
-            "--signing-key-file", f"{self.docker_assets}/{wallet.name}.skey",
-            "--out-file", f"{self.docker_assets}/new-utxo.signed",
-            "--testnet-magic", str(self.testnet_magic)
-        ]
-        self.run_cardano_cli(params)
+        self.cli.sign_transaction(
+            tx_body_file=f"{self.cli.docker_assets}/new-utxo.body",
+            signing_key_file=f"{self.cli.docker_assets}/{wallet.name}.skey",
+            out_file=f"{self.cli.docker_assets}/new-utxo.signed"
+        )
 
         # Submit signed transaction to create utxo
-        submit_cmd = [
-            "latest", "transaction", "submit",
-            "--tx-file", f"{self.docker_assets}/new-utxo.signed",
-            "--testnet-magic", str(self.testnet_magic),
-            "--socket-path", self.socket_path
-        ]
-        self.run_cardano_cli(submit_cmd)
+        self.cli.submit_transaction(f"{self.cli.docker_assets}/new-utxo.signed")
 
     def find_largest_utxo(self, wallet: CardanoWallet) -> tuple[UTxO, int]:
         largest_value = 0
@@ -120,7 +100,7 @@ class CardanoTransaction:
             exclude: list = []) -> list[UTxO]:
 
         """
-        Find UTXOs at an address with a minimum amount of lovelace.
+        Find UTxOs at an address with a minimum amount of lovelace.
         
         Args:
             address: The address to search
@@ -192,65 +172,14 @@ class CardanoTransaction:
 
         return 0
 
-    def get_transaction_hash(self, file_name:str) -> str:
-        cmd = ["latest", "transaction", "txid", "--tx-file", file_name]
-        logger.info(f"Waiting for transaction hash")
-        attempt_nr = 0
-
-        while attempt_nr < MAX_ATTEMPTS:
-            try:
-                result = self.run_cardano_cli(cmd)
-                if result and result.stdout != "" and result.stderr == "":
-                    return result.stdout.removesuffix("\n")
-
-                time.sleep(WAIT_DATA_SYNC)
-                attempt_nr += 1
-
-            except TransactionError as te:
-                return ""
-
-        return ""
-
-    def run_cardano_cli(self, cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
-        """Run a cardano-cli command in the docker container."""
-        docker_cmd = ["docker", "exec", self.docker_container, "cardano-cli"] + cmd
-        cmd_str = ' '.join(docker_cmd)
-
-        try:
-            result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, check=check)
-            if result.stderr and ("unexpected" in result.stderr or "Usage" in result.stderr or "Invalid" in result.stderr):
-                raise TransactionError(
-                    f"cardano-cli command failed!"
-                    f"Command executed: {cmd_str}\nStdout:\n{result.stdout}\nStderr:\n{result.stderr}"
-                )
-
-            return result
-
-        except subprocess.CalledProcessError as e:
-            raise TransactionError(
-                f"cardano-cli command failed: Exit code {e.returncode}, "
-                f"Stdout: {e.stdout}, Stderr: {e.stderr}"
-            )
+    def get_transaction_hash(self, file_name: str) -> str:
+        return self.cli.get_transaction_hash(file_name)
 
     def write_temp_json(self, data: dict, filename: str) -> str:
-        """Write a dictionary to a temporary JSON file in assets directory."""
-        file_path = os.path.join(self.assets_path, filename)
-        with open(file_path, 'w') as f:
-            json.dump(data, f, indent=2)
-        return file_path
+        return self.cli.write_temp_json(data, filename, self.assets_path)
 
     def get_current_slot_and_validity(self, validity_window: int = 1000) -> tuple[int, int, int]:
-        """Get current slot and calculate validity range."""
-        tip_cmd = [
-            "query", "tip",
-            "--testnet-magic", str(self.testnet_magic),
-            "--socket-path", self.socket_path
-        ]
-        tip_result = self.run_cardano_cli(tip_cmd)
-        current_slot = json.loads(tip_result.stdout).get("slot", 0)
-        invalid_before = current_slot
-        invalid_hereafter = current_slot + validity_window
-        return current_slot, invalid_before, invalid_hereafter
+        return self.cli.get_current_slot_and_validity(validity_window)
 
     def prepare_script_transaction(
         self,
@@ -267,7 +196,8 @@ class CardanoTransaction:
         Returns the signed transaction file path and the id string.
         """
         # Find the UTxO containing the ID
-        utxo = self.find_utxos_with_id(id_str)
+        utxos = self.find_utxos_at_address(self.provenance_address)
+        utxo, _ = self.context.find_utxo_with_datum_id(utxos, id_str)
         
         # Find collateral UTxO from the wallet
         collateral_utxos = [
@@ -298,19 +228,18 @@ class CardanoTransaction:
         
         # Build the base command
         wallet_addr_str = str(wallet.address)
-        validator_addr_str = str(self.validator_address)
+        validator_addr_str = str(self.provenance_address)
         
         build_cmd = [
-            "latest", "transaction", "build",
-            "--testnet-magic", str(self.testnet_magic),
-            "--socket-path", self.socket_path,
+            "--testnet-magic", str(self.cli.testnet_magic),
+            "--socket-path", self.cli.socket_path,
             "--change-address", wallet_addr_str,
             "--tx-in", txin,
-            "--tx-in-script-file", f"{self.docker_assets}/dfct-provenance.plutus",
+            "--tx-in-script-file", f"{self.cli.docker_assets}/dfct-provenance.plutus",
             "--tx-in-inline-datum-present",
-            "--tx-in-redeemer-file", f"{self.docker_assets}/{redeemer_file}",
+            "--tx-in-redeemer-file", f"{self.cli.docker_assets}/{redeemer_file}",
             "--tx-in-collateral", txin_collateral,
-            "--required-signer", f"{self.docker_assets}/{wallet.name}.skey",
+            "--required-signer", f"{self.cli.docker_assets}/{wallet.name}.skey",
             "--invalid-before", str(invalid_before),
             "--invalid-hereafter", str(invalid_hereafter)
         ]
@@ -327,25 +256,22 @@ class CardanoTransaction:
                 
             build_cmd.extend([
                 "--tx-out", tx_out,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{output_datum_file}"
+                "--tx-out-inline-datum-file", f"{self.cli.docker_assets}/{output_datum_file}"
             ])
         
         # Add output file
         raw_tx_file = f"{action_name}-{id_str}.raw"
-        build_cmd.extend(["--out-file", f"{self.docker_assets}/{raw_tx_file}"])
+        build_cmd.extend(["--out-file", f"{self.cli.docker_assets}/{raw_tx_file}"])
         
         # Build the transaction
-        self.run_cardano_cli(build_cmd)
+        self.cli.build_transaction(build_cmd)
         
         # Sign the transaction
         signed_tx_file = f"{action_name}-{id_str}.signed"
-        sign_cmd = [
-            "latest", "transaction", "sign",
-            "--tx-body-file", f"{self.docker_assets}/{raw_tx_file}",
-            "--signing-key-file", f"{self.docker_assets}/{wallet.name}.skey",
-            "--out-file", f"{self.docker_assets}/{signed_tx_file}",
-            "--testnet-magic", str(self.testnet_magic)
-        ]
-        self.run_cardano_cli(sign_cmd)
-        
+        self.cli.sign_transaction(
+            tx_body_file=f"{self.cli.docker_assets}/{raw_tx_file}",
+            signing_key_file=f"{self.cli.docker_assets}/{wallet.name}.skey",
+            out_file=f"{self.cli.docker_assets}/{signed_tx_file}"
+        )
+
         return signed_tx_file, id_str

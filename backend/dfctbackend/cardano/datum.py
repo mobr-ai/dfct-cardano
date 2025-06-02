@@ -2,18 +2,14 @@ import time
 from typing import Any
 import logging
 import cbor2
+from pycardano import UTxO
 from enum import Enum
 
 from dfctbackend.config import settings
-from dfctbackend.cardano.transaction import MAX_ATTEMPTS, WAIT_DATA_SYNC
 from dfctbackend.cardano.wallet import local_wallets
 from dfctbackend.cardano.utils import (
     generate_topic_id, str_to_hex
 )
-
-from pycardano import UTxO
-
-logger = logging.getLogger(__name__)
 
 class TopicStatus(Enum):
     PROPOSED = 0
@@ -23,17 +19,28 @@ class TopicStatus(Enum):
     REJECTED = 4
 
 class ContributionStatus(Enum):
-    EVIDENCE_PROPOSED = 0
-    VERDICT_TAG_SELECTED = 1
+    PROPOSED = 0
+    REVIEWED = 1
+    DISPUTED = 2
+    UPDATED = 3
+    REJECTED = 4
+    VERIFIED = 5
+    EVALUATED = 6
+    REWARDS_DISTRIBUTED = 7
+    POOL_EVALUATED = 8
+
+class ContributionType(Enum):
+    EVIDENCE = 0
+    TAG_SELECTION = 1
     VOTE_CASTED = 2
-    CONTRIBUTION_REVIEWED = 3
-    CONTRIBUTION_DISPUTED = 4
-    CONTRIBUTION_UPDATED = 5
-    CONTRIBUTION_REJECTED = 6
-    CONTRIBUTION_VERIFIED = 7
-    CONTRIBUTION_EVALUATED = 8
-    REWARDS_DISTRIBUTED = 9
-    POOL_EVALUATED = 10
+
+class ProposalStatus(Enum):
+    PROPOSED = 0
+    VOTING = 1
+    APPROVED = 2
+    REJECTED = 3
+
+logger = logging.getLogger(__name__)
 
 class TopicTrack:
     def __init__(self, current_status, contrib_no=0, utxos_no=0):
@@ -538,6 +545,209 @@ class DatumProcessor:
 
         except Exception as e:
             logger.error(f"Failed to extract contribution data: {str(e)}")
+            # Print more detailed error information for debugging
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+
+
+    def prepare_proposal_datum_redeemer(
+        self,
+        title: str,
+        description: str,
+        proposer_pkh: str,
+        reward_amount: int = 1000
+    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        """
+        Prepare a governance proposal datum and redeemer.
+        """
+        proposal_id = generate_proposal_id()
+        current_time = int(time.time() * 1000)
+        proposal_list = [proposal_id, title, description, proposer_pkh, current_time]
+        rpi_list = [reward_amount, 0, self.token_name, current_time]
+
+        plutus_proposal = [
+            {"bytes": str_to_hex(proposal_id)},
+            {"bytes": str_to_hex(title)},
+            {"bytes": str_to_hex(description)},
+            {"bytes": proposer_pkh},
+            {"int": current_time}
+        ]
+
+        plutus_rpi = [
+            {"int": reward_amount},
+            {"int": 0},
+            {"bytes": self.token_name_hex},
+            {"int": current_time}
+        ]
+
+        datum = {
+            "constructor": 0,
+            "fields": [
+                {
+                    "constructor": 0,
+                    "fields": plutus_proposal
+                },
+                {
+                    "constructor": ProposalStatus.PROPOSED.value,
+                    "fields": []
+                },
+                {
+                    "constructor": 0,
+                    "fields": plutus_rpi
+                },
+                {"list": []}  # votes
+            ]
+        }
+
+        redeemer = {
+            "constructor": 0,
+            "fields": [
+                {
+                    "constructor": 0,  # SubmitProposal
+                    "fields": [
+                        {
+                            "constructor": 0,
+                            "fields": plutus_proposal
+                        },
+                        {
+                            "constructor": 0,
+                            "fields": plutus_rpi
+                        }
+                    ]
+                }
+            ]
+        }
+
+        return datum, redeemer, proposal_id
+
+    def prepare_vote_redeemer(
+        self,
+        proposal_id: str,
+        voter_pkh: str,
+        vote: bool,
+        dfc_amount: int
+    ) -> dict[str, Any]:
+        """
+        Prepare a vote redeemer for a governance proposal.
+        """
+        proposal_id_hex = str_to_hex(proposal_id)
+        redeemer = {
+            "constructor": 0,
+            "fields": [
+                {
+                    "constructor": 1,  # Vote
+                    "fields": [
+                        {"bytes": proposal_id_hex},
+                        {"bytes": voter_pkh},
+                        {"int": 1 if vote else 0},
+                        {"int": dfc_amount}
+                    ]
+                }
+            ]
+        }
+        return redeemer
+
+    def prepare_finalize_redeemer(self, proposal_id: str) -> dict[str, Any]:
+        """
+        Prepare a finalize redeemer for a governance proposal.
+        """
+        proposal_id_hex = str_to_hex(proposal_id)
+        redeemer = {
+            "constructor": 0,
+            "fields": [
+                {
+                    "constructor": 2,  # FinalizeVote
+                    "fields": [
+                        {"bytes": proposal_id_hex}
+                    ]
+                }
+            ]
+        }
+        return redeemer
+
+    def prepare_updated_proposal_datum(
+        self,
+        datum: dict,
+        vote: bool = None,
+        voter_pkh: str = None,
+        dfc_amount: int = 0,
+        status: ProposalStatus = None
+    ) -> dict[str, Any]:
+        """
+        Prepare an updated proposal datum after voting or finalization.
+        """
+        updated_datum = datum.copy()
+        if vote is not None and voter_pkh and dfc_amount:
+            vote_record = {
+                "constructor": 0,
+                "fields": [
+                    {"bytes": voter_pkh},
+                    {"int": 1 if vote else 0},
+                    {"int": dfc_amount}
+                ]
+            }
+            updated_datum["fields"][3]["list"].append(vote_record)
+        if status:
+            updated_datum["fields"][1] = {
+                "constructor": status.value,
+                "fields": []
+            }
+        return updated_datum
+
+    def extract_proposal_from_datum(self, proposal_datum: dict) -> dict[str, Any]:
+        """
+        Extract governance proposal data from its datum structure.
+        """
+        try:
+            if len(proposal_datum) != 4:
+                return None
+
+            # Extract proposal details
+            proposal_details = proposal_datum[0]["fields"]
+            proposal_id = proposal_details[0]["bytes"]
+            title = proposal_details[1]["bytes"]
+            description = proposal_details[2]["bytes"]
+            proposer = proposal_details[3]["bytes"]
+            timestamp = proposal_details[4]["int"]
+            status = ProposalStatus(proposal_datum[1]["constructor"])
+
+            # Extract reward pool information
+            reward_info = proposal_datum[2]["fields"]
+            total_amount = reward_info[0]["int"]
+            allocated_amount = reward_info[1]["int"]
+            token_name = reward_info[2]["bytes"]
+            creation_timestamp = reward_info[3]["int"]
+
+            # Extract votes
+            votes = []
+            for vote in proposal_datum[3]["list"]:
+                vote_record = {
+                    "voter_pkh": vote["fields"][0]["bytes"],
+                    "vote": bool(vote["fields"][1]["int"]),
+                    "dfc_amount": vote["fields"][2]["amount"]
+                }
+                votes.append(vote_record)
+            result = {
+                "proposal_id": proposal_id,
+                "title": title,
+                "description": description,
+                "proposer_pkh": proposer,
+                "timestamp": timestamp,
+                "status": status,
+                "reward_pool": {
+                    "total_amount": total_amount,
+                    "allocated_amount": allocated_amount,
+                    "token_name": token_name,
+                    "creation_timestamp": creation_timestamp
+                },
+                "votes": votes
+            }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to extract proposal data: {str(e)}")
             # Print more detailed error information for debugging
             import traceback
             logger.error(traceback.format_exc())

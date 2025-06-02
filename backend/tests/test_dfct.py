@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from pycardano import Address, PaymentSigningKey, ScriptHash
 from dfctbackend.cardano.wallet import CardanoWallet, get_wallet_by_name
 from dfctbackend.cardano.datum import DatumProcessor, TopicStatus, ContributionStatus
-from dfctbackend.cardano.contract import ProvenanceContract
+from dfctbackend.cardano.provenance_contract import ProvenanceContract
 from dfctbackend.cardano.transaction import CardanoTransaction
 from dfctbackend.cardano.utils import str_to_hex, generate_contribution_id
 from dfctbackend.config import settings
@@ -28,10 +28,14 @@ def mock_assets_dir(tmp_path):
         (assets_dir / f"{name}.vkey").write_text('{"type": "PaymentVerificationKeyShelley_ed25519","description": "Payment Verification Key","cborHex": "58208712a9586036b220bedb8aabb4f5ea08390d73f6ee8d0c2c350c599f8b8619b6"}')
         (assets_dir / f"{name}.skey").write_text('{"type": "PaymentSigningKeyShelley_ed25519","description": "Payment Signing Key","cborHex": "582050092ffa66340253d5f08852cadce0ab2b2a229886866376c84c7ec45dcd3c31"}')
 
-    # Mock policy and validator files
+    # Mock policy and validators
     (assets_dir / "dfct-minting-policy.id").write_text("ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa")
+
     (assets_dir / "dfct-provenance.addr").write_text("addr_test1wzw3dv98lkulug8gh26exeh67qf44lkjtj7eejfrh0skpycfv9hqk")
+    (assets_dir / "dfct-governance.addr").write_text("addr_test1wzw3dv98lkulug8gh26exeh67qf44lkjtj7eejfrh0skpycfv9hqk")
+
     (assets_dir / "dfct-provenance.plutus").write_text('{"type": "PlutusScriptV3","description": "","cborHex": "4e4d01000033222220051200120011"}')
+    (assets_dir / "dfct-governance.plutus").write_text('{"type": "PlutusScriptV3","description": "","cborHex": "4e4d01000033222220051200120011"}')
 
     with patch.object(settings, "ASSETS_DIR", assets_dir):
         with patch.object(settings, "DOCKER_ASSETS_DIR", str(assets_dir)):
@@ -112,7 +116,7 @@ class TestDatumProcessor:
             contribution_type="evidence",
             content="Test Content",
             contributor_pkh="mock_payment_key_hash",
-            contribution_status=ContributionStatus.EVIDENCE_PROPOSED.value,
+            contribution_status=ContributionStatus.PROPOSED.value,
             timestamp=int(time.time() * 1000)
         )
         assert datum["constructor"] == 0
@@ -179,7 +183,7 @@ class TestProvenanceContract:
         contract_mock.transactions = mock_cardano_transaction
         contract_mock.policy_id = "ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa"
         contract_mock.token_name = "DFC"
-        contract_mock.validator_address = Address.decode(
+        contract_mock.provenance_address = Address.decode(
             "addr_test1wzw3dv98lkulug8gh26exeh67qf44lkjtj7eejfrh0skpycfv9hqk"
         )
         return contract_mock
@@ -188,7 +192,7 @@ class TestProvenanceContract:
         """Test contract initialization."""
         assert contract.policy_id == "ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa"
         assert contract.token_name == "DFC"
-        assert isinstance(contract.validator_address, Address)
+        assert isinstance(contract.provenance_address, Address)
 
     def test_submit_topic(self, contract, mock_assets_dir):
         """Test submitting a new topic."""
@@ -198,7 +202,6 @@ class TestProvenanceContract:
         mock_utxo.output.amount.multi_asset = {ScriptHash(bytes.fromhex("ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa")): {"DFC": 1000}}
         contract.transactions.find_token_utxo.return_value = mock_utxo
         contract.transactions.find_utxo_and_create_tx_in.return_value = ("txin#0", mock_utxo)
-        contract.transactions.run_cardano_cli.return_value = MagicMock(stdout="tx_hash")
         contract.transactions.get_transaction_hash.return_value = "tx_hash"
 
         result = contract.submit_topic(
@@ -221,7 +224,7 @@ class TestAPIRouter:
         contract_mock.transactions = mock_cardano_transaction
         contract_mock.policy_id = "ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa"
         contract_mock.token_name = "DFC"
-        contract_mock.validator_address = Address.decode(
+        contract_mock.provenance_address = Address.decode(
             "addr_test1wzw3dv98lkulug8gh26exeh67qf44lkjtj7eejfrh0skpycfv9hqk"
         )
         with patch("dfctbackend.api.router.provenance_contract", contract_mock):
@@ -341,7 +344,7 @@ class TestAPIRouter:
             "contribution_id": "c12345678",
             "topic_id": "t12345678",
             "content": str_to_hex("Test Content"),
-            "status": ContributionStatus.EVIDENCE_PROPOSED
+            "status": ContributionStatus.PROPOSED
         }
         response = client.get("/api/v1/contribution/c12345678")
         assert response.status_code == 200

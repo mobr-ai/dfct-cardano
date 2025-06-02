@@ -6,7 +6,6 @@ from binascii import Error as HexError
 class Settings(BaseSettings):
     """Application settings loaded from environment variables with fallbacks."""
 
-    # Pydantic V2 config using SettingsConfigDict
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -22,13 +21,14 @@ class Settings(BaseSettings):
     CARDANO_NODE_HOST: str = "localhost"
     CARDANO_NODE_PORT: int = 3001
     OGMIOS_PORT: int = 1337
-    
+
     # Magic number for testnet
     TESTNET_MAGIC: int = 2
-    
+
     # Contract information
     POLICY_ID: Optional[str] = None
-    VALIDATOR_ADDRESS: Optional[str] = None
+    PROVENANCE_ADDRESS: Optional[str] = None
+    GOVERNANCE_ADDRESS: Optional[str] = None
     TOKEN_NAME: str = "DFC"
 
     def __init__(self, **kwargs):
@@ -43,15 +43,23 @@ class Settings(BaseSettings):
                     except HexError:
                         raise ValueError(f"Invalid POLICY_ID in {policy_id_path}: not a hex string")
             else:
-                raise ValueError('Policy id is a requirement')
+                raise ValueError('Minting policy id is a requirement')
 
-        if not self.VALIDATOR_ADDRESS:
+        if not self.PROVENANCE_ADDRESS:
             validator_addr_path = self.ASSETS_DIR / "dfct-provenance.addr"
             if validator_addr_path.exists():
                 with open(validator_addr_path, "r") as f:
-                    self.VALIDATOR_ADDRESS = f.read().strip()
+                    self.PROVENANCE_ADDRESS = f.read().strip()
             else:
-                raise ValueError('Validator address is a requirement')
+                raise ValueError('Provenance validator address is a requirement')
+
+        if not self.GOVERNANCE_ADDRESS:
+            validator_addr_path = self.ASSETS_DIR / "dfct-governance.addr"
+            if validator_addr_path.exists():
+                with open(validator_addr_path, "r") as f:
+                    self.GOVERNANCE_ADDRESS = f.read().strip()
+            else:
+                raise ValueError('Governance validator address is a requirement')
 
 # Create a global settings instance
 settings = Settings()

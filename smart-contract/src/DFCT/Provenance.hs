@@ -54,99 +54,99 @@ mkDFCTValidator symbol rawData =
                             TopicAction ta -> case ta of
                                 SubmitTopic topic' pool ->
                                     if not (validateTopicData topic' txInfo)
-                                        then traceError "3" -- invalid topic data
+                                        then traceError "4" -- invalid topic data
                                     else if lengthOfByteString (topicId topic') == 0
-                                        then traceError "4" -- invalid topic_id is empty
+                                        then traceError "5" -- invalid topic_id is empty
                                     else if not (validateRewardPool pool)
-                                        then traceError "5" -- invalid reward pool allocation
+                                        then traceError "6" -- invalid reward pool allocation
                                     -- else if not (checkTokenAllocation pool txInfo symbol)
                                     --     then traceError "SubmitTopic: Insufficient token allocation"
                                     else toOpaque ()
 
                                 ReviewTopic tid signed ->
                                     if topicStatus datum /= TopicProposed
-                                        then traceError "6" -- Topic isnt in proposed state
+                                        then traceError "7" -- Topic isnt in proposed state
                                     else if lengthOfByteString tid == 0
-                                        then traceError "7" -- invalid topic_id is empty
+                                        then traceError "8" -- invalid topic_id is empty
                                     else if not (checkReviewerAuth signed datum txInfo)
-                                        then traceError "8" -- unauthorized reviewer
+                                        then traceError "9" -- unauthorized reviewer
                                     else if not (ensureProperTransition TopicReviewed scriptContext)
-                                        then traceError "9" -- invalid transition
+                                        then traceError "10" -- invalid transition
                                     else toOpaque ()
 
                                 ActivateTopic tid ->
                                     if lengthOfByteString tid == 0
-                                        then traceError "10" -- invalid topic_id is empty
+                                        then traceError "11" -- invalid topic_id is empty
                                     else if topicStatus datum /= TopicReviewed
-                                        then traceError "11" -- Topic isnt in reviewed state
+                                        then traceError "12" -- Topic isnt in reviewed state
                                     else if not (ensureProperTransition TopicActivated scriptContext)
-                                        then traceError "12" -- invalid transition
+                                        then traceError "13" -- invalid transition
                                     else toOpaque ()
 
                                 CloseTopic tid ->
                                     if lengthOfByteString tid == 0
-                                        then traceError "11" -- invalid topic_id is empty
+                                        then traceError "14" -- invalid topic_id is empty
                                     else if topicStatus datum /= TopicActivated
-                                        then traceError "12" -- Topic isnt in activated state
+                                        then traceError "15" -- Topic isnt in activated state
                                     else if not (ensureProperTransition TopicClosed scriptContext)
-                                        then traceError "13" -- invalid transition
+                                        then traceError "16" -- invalid transition
                                     else toOpaque ()
 
                                 RejectTopic tid ->
                                     if lengthOfByteString tid == 0
-                                        then traceError "14" -- invalid topic_id is empty
+                                        then traceError "17" -- invalid topic_id is empty
                                     else if topicStatus datum /= TopicProposed && topicStatus datum /= TopicReviewed
-                                        then traceError "15" -- Topic isnt in proposed nor reviewed state
+                                        then traceError "18" -- Topic isnt in proposed nor reviewed state
                                     else if not (ensureProperTransition TopicRejected scriptContext)
-                                        then traceError "16" -- invalid transition
+                                        then traceError "19" -- invalid transition
                                     else toOpaque ()
 
                             ContributionAction ca -> case ca of
-                                SubmitEvidence sEvContrib ->
+                                SubmitContribution sContrib ->
                                     if topicStatus datum /= TopicActivated
-                                        then traceError "18" -- topic inst in activated state
-                                    else if lengthOfByteString (contributionId sEvContrib) == 0
-                                        then traceError "19" -- invalid contribution_id is empty
-                                    else if not (validateContributionData sEvContrib txInfo)
-                                        then traceError "20" -- Invalid contrib data
+                                        then traceError "20" -- topic isnt in activated state
+                                    else if lengthOfByteString (contributionId sContrib) == 0
+                                        then traceError "21" -- invalid contribution_id is empty
+                                    else if not (validateContributionData sContrib txInfo)
+                                        then traceError "22" -- Invalid contrib data
                                     else 
                                         -- Calculate timeliness score for new contributions
                                         let currentTime = txInfoValidRange txInfo
                                             timeScore = calculateTimelinessScore 
                                                         (creationTimestamp (rewardPool datum)) 
                                                         (getLowerTime currentTime)
-                                        in if not (validateContributionTimeliness sEvContrib timeScore)
-                                            then traceError "21" -- Invalid timeliness calc
+                                        in if not (validateContributionTimeliness sContrib timeScore)
+                                            then traceError "24" -- Invalid timeliness calc
                                             else toOpaque ()
 
-                                _ -> traceError "22" -- Invalid contribution action
+                                _ -> traceError "25" -- Invalid contribution action
 
                             AdminAction aa -> case aa of
                                 CheckPool tid ->
                                     if lengthOfByteString tid == 0
-                                        then traceError "23" -- invalid topic_id is empty
+                                        then traceError "26" -- invalid topic_id is empty
                                     else if tid /= topicId (topic datum)
-                                        then traceError "24" -- invalid topic_id
+                                        then traceError "27" -- invalid topic_id
                                     else toOpaque ()
 
                                 DistributeRewards tid rewards ->
                                     if lengthOfByteString tid == 0
-                                        then traceError "25" -- invalid topic_id is empty
+                                        then traceError "28" -- invalid topic_id is empty
                                     else if topicStatus datum /= TopicActivated
-                                        then traceError "26" -- topic inst in activated state
+                                        then traceError "29" -- topic isnt in activated state
                                     else if not (validateRewardDistribution rewards)
-                                        then traceError "27" -- invalid reward distribution
+                                        then traceError "30" -- invalid reward distribution
                                     else if sumRewards rewards > totalAmount (rewardPool datum)
-                                        then traceError "28" -- reward overflow
+                                        then traceError "31" -- reward overflow
                                     else if not (validateOutputsForRewards rewards txInfo symbol)
-                                        then traceError "29" -- invalid reward outputs
+                                        then traceError "32" -- invalid reward outputs
                                     else toOpaque ()
 
                                 UpdateReviewers newReviewers ->
                                     if AssocMap.null newReviewers
-                                        then traceError "30" -- invalid empty reviewer list
+                                        then traceError "33" -- invalid empty reviewer list
                                     else if not (ensureReviewerUpdate newReviewers scriptContext)
-                                        then traceError "31" -- invalid reviewer update
+                                        then traceError "34" -- invalid reviewer update
                                     else toOpaque ()
 
                     (Nothing, Just _) -> 
@@ -155,118 +155,102 @@ mkDFCTValidator symbol rawData =
                             ContributionAction ca -> case ca of
                                 ReviewContribution cid rel acc comp reviewContent ->
                                     if lengthOfByteString cid == 0
-                                        then traceError "33" -- invalid: contribution id is empty
+                                        then traceError "35" -- invalid: contribution id is empty
                                     else if rel < 0 || rel > 10 || acc < 0 || acc > 10 || comp < 0 || comp > 10
-                                        then traceError "34" -- invalid review scores
+                                        then traceError "36" -- invalid review scores
                                     else if not (findTopicInReferences txInfo)
-                                        then traceError "35" -- reference to topic is required
+                                        then traceError "37" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
-                                        then traceError "36" -- topic isn't in activated state
+                                        then traceError "38" -- topic isn't in activated state
                                     else if not (checkReviewerInReferences txInfo)
-                                        then traceError "37" -- reviewer is not authorized
+                                        then traceError "39" -- reviewer is not authorized
                                     else if not (validateReviewContent reviewContent txInfo)
-                                        then traceError "38" -- invalid content
+                                        then traceError "40" -- invalid content
                                     else if cid /= refCntribId reviewContent
-                                        then traceError "39" -- invalid content reference
+                                        then traceError "41" -- invalid content reference
                                     else if not (ensureContributionProperTransition ContributionReviewed scriptContext)
-                                        then traceError "40" -- invalid transition
+                                        then traceError "42" -- invalid transition
                                     else toOpaque ()
 
                                 VerifyContribution cid ->
                                     if lengthOfByteString cid == 0
-                                        then traceError "41" -- invalid: contribution id is empty
+                                        then traceError "43" -- invalid: contribution id is empty
                                     else if not (findTopicInReferences txInfo)
-                                        then traceError "42" -- reference to topic is required
+                                        then traceError "44" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
-                                        then traceError "43" -- topic isn't in activated state
+                                        then traceError "45" -- topic isn't in activated state
                                     else if not (ensureContributionProperTransition ContributionVerified scriptContext)
-                                        then traceError "44" -- invalid transition
+                                        then traceError "46" -- invalid transition
                                     else toOpaque ()
 
                                 DisputeContribution cid disputeReason ->
                                     if lengthOfByteString cid == 0
-                                        then traceError "45" -- invalid: contribution id is empty
+                                        then traceError "47" -- invalid: contribution id is empty
                                     else if not (findTopicInReferences txInfo)
-                                        then traceError "46" -- reference to topic is required
+                                        then traceError "48" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
-                                        then traceError "47" -- topic isn't in activated state
+                                        then traceError "49" -- topic isn't in activated state
                                     else if lengthOfByteString (disputeContent disputeReason) <= 0
-                                        then traceError "48" -- reason is required
+                                        then traceError "50" -- reason is required
                                     else if not (validateDisputeReason disputeReason txInfo)
-                                        then traceError "49" -- invalid reason
+                                        then traceError "51" -- invalid reason
                                     else if not (ensureContributionProperTransition ContributionDisputed scriptContext)
-                                        then traceError "50" -- invalid transition
+                                        then traceError "52" -- invalid transition
                                     else toOpaque ()
 
                                 UpdateContribution cid newContent ->
                                     if lengthOfByteString cid == 0
-                                        then traceError "51" -- invalid: contribution id is empty
+                                        then traceError "53" -- invalid: contribution id is empty
                                     else if not (findTopicInReferences txInfo)
-                                        then traceError "52" -- reference to topic is required
+                                        then traceError "54" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
-                                        then traceError "53" -- topic isn't in activated state
+                                        then traceError "55" -- topic isn't in activated state
                                     else if lengthOfByteString newContent <= 0
-                                        then traceError "54"
+                                        then traceError "56"
                                     else if not (ensureContributionProperTransition ContributionUpdated scriptContext)
-                                        then traceError "55" -- invalid transition
+                                        then traceError "57" -- invalid transition
                                     else toOpaque ()
 
                                 RejectContribution cid ->
                                     if lengthOfByteString cid == 0
-                                        then traceError "56" -- invalid: contribution id is empty
+                                        then traceError "58" -- invalid: contribution id is empty
                                     else if not (findTopicInReferences txInfo)
-                                        then traceError "57" -- reference to topic is required
+                                        then traceError "59" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
-                                        then traceError "58" -- topic isn't in activated state
+                                        then traceError "60" -- topic isn't in activated state
                                     else if not (ensureContributionProperTransition ContributionRejected scriptContext)
-                                        then traceError "59" -- invalid transition
+                                        then traceError "61" -- invalid transition
                                     else toOpaque ()
 
                                 EvaluateContribution cid ->
                                     if lengthOfByteString cid == 0
-                                        then traceError "60" -- invalid: contribution id is empty
+                                        then traceError "62" -- invalid: contribution id is empty
                                     else if not (findTopicInReferences txInfo)
-                                        then traceError "61" -- reference to topic is required
+                                        then traceError "63" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
-                                        then traceError "62" -- topic isn't in activated state
+                                        then traceError "64" -- topic isn't in activated state
                                     else if not (ensureContributionProperTransition ContributionEvaluated scriptContext)
-                                        then traceError "63" -- invalid transition
+                                        then traceError "65" -- invalid transition
                                     else toOpaque ()
 
-                                CastVote contribCV ->
-                                    if lengthOfByteString (contributionId contribCV) == 0
-                                        then traceError "64" -- invalid: contribution id is empty
+                                SubmitContribution sContrib ->
+                                    if lengthOfByteString (contributionId sContrib) == 0
+                                        then traceError "66" -- invalid: contribution id is empty
                                     else if not (findTopicInReferences txInfo)
-                                        then traceError "65" -- reference to topic is required
+                                        then traceError "67" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
-                                        then traceError "66" -- topic isn't in activated state
-                                    else if not (Contexts.txSignedBy txInfo (contributionCreator contribCV))
-                                        then traceError "67"
-                                    else if not (ensureContributionProperTransition VoteCasted scriptContext)
-                                        then traceError "68" -- invalid transition
+                                        then traceError "68" -- topic isn't in activated state
+                                    else if not (Contexts.txSignedBy txInfo (contributionCreator sContrib))
+                                        then traceError "69" -- creator signature required
+                                    else if not (ensureContributionProperTransition ContributionProposed scriptContext)
+                                        then traceError "70" -- invalid transition
                                     else toOpaque ()
-
-                                SelectTag contribST ->
-                                    if lengthOfByteString (contributionId contribST) == 0
-                                        then traceError "69" -- invalid: contribution id is empty
-                                    else if not (findTopicInReferences txInfo)
-                                        then traceError "70" -- reference to topic is required
-                                    else if not (isTopicActive txInfo)
-                                        then traceError "71" -- topic isn't in activated state
-                                    else if not (Contexts.txSignedBy txInfo (contributionCreator contribST))
-                                        then traceError "72" -- tagger is not authorized
-                                    else if not (ensureContributionProperTransition VerdictTagSelected scriptContext)
-                                        then traceError "73" -- invalid transition
-                                    else toOpaque ()
-
-                                -- Invalid operations for contributions
-                                _ -> traceError "74" -- invalid contribution action
 
                             -- Other actions (TopicAction, AdminAction) aren't allowed for Contribution UTxOs
-                            _ -> traceError "75" -- missing topic datum
+                            _ -> traceError "71" -- missing topic datum
 
                     -- If we couldn't decode either datum type
-                    (Nothing, Nothing) -> traceError "76" -- failed decoding either datum type
+                    (Nothing, Nothing) -> traceError "72" -- failed decoding either datum type
 
 -- Check if there's a topic reference input in active state
 {-# INLINABLE findTopicInReferences #-}
@@ -422,7 +406,7 @@ validateContributionData :: Contribution -> TxInfo -> Bool
 validateContributionData c info =
     lengthOfByteString (contributionId c) > 0 &&
     lengthOfByteString (contributionTopicId c) > 0 &&
-    lengthOfByteString (contributionType c) > 0 &&
+    lengthOfByteString (contributionContent c) > 0 &&
     Contexts.txSignedBy info (contributionCreator c)
 
 -- validate contribution timeliness

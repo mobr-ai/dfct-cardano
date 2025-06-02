@@ -32,9 +32,8 @@ tests = testGroup "DFCT Smart Contract Tests"
         , testCase "Reviewer update with non-owner signature fails" testReviewerUpdateNonOwner
         ]
     , testGroup "Contribution Handling"
-        [ testCase "Evidence submission in active topic succeeds" testEvidenceSubmissionValid
-        , testCase "Vote casting in active topic succeeds" testVoteCastingValid
-        , testCase "Tag selection in active topic succeeds" testTagSelectionValid
+        [ testCase "Contribution submission in active topic succeeds" testContributionSubmissionValid
+        , testCase "Different types of contribution submission succeeds" testContributionSubmissionValidWithDifferentTypes
         , testCase "Contribution review with valid scores succeeds" testContributionReviewValid
         , testCase "Contribution dispute with reason succeeds" testContributionDisputeValid
         , testCase "Contribution rejection in active topic succeeds" testContributionRejectValid
