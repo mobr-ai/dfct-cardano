@@ -16,12 +16,10 @@ class CardanoCli:
     """Class to handle cardano-cli commands execution in a Docker container."""
     
     def __init__(self, testnet_magic: int = 2, socket_path: str = "/data/node.socket", 
-                 docker_container: str = "cardano-node-preview", 
-                 docker_assets: str = settings.DOCKER_ASSETS_DIR):
+                 docker_container: str = "cardano-node-preview"):
         self.testnet_magic = testnet_magic
         self.socket_path = socket_path
         self.docker_container = docker_container
-        self.docker_assets = docker_assets
 
     def run_cardano_cli(self, cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
         """Run a cardano-cli command in the docker container."""
@@ -61,7 +59,11 @@ class CardanoCli:
 
     def build_transaction(self, params: list[str]) -> subprocess.CompletedProcess:
         """Build a transaction using cardano-cli."""
-        cmd = ["latest", "transaction", "build"] + params
+        cmd = [
+            "latest", "transaction", "build",
+            "--testnet-magic", str(self.testnet_magic),
+            "--socket-path", self.socket_path
+        ] + params
         return self.run_cardano_cli(cmd)
 
     def sign_transaction(self, tx_body_file: str, signing_key_file: str, out_file: str) -> subprocess.CompletedProcess:
@@ -97,10 +99,3 @@ class CardanoCli:
         invalid_before = current_slot
         invalid_hereafter = current_slot + validity_window
         return current_slot, invalid_before, invalid_hereafter
-
-    def write_temp_json(self, data: dict, filename: str, assets_path: str) -> str:
-        """Write a dictionary to a temporary JSON file in assets directory."""
-        file_path = os.path.join(assets_path, filename)
-        with open(file_path, 'w') as f:
-            json.dump(data, f, indent=2)
-        return file_path

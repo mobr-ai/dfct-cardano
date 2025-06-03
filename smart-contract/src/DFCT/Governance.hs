@@ -54,8 +54,6 @@ PlutusTx.makeLift ''DFCTProposalStatus
 -- DFCTProposal Data
 data DFCTProposal = DFCTProposal
   { proposalId         :: BuiltinByteString    -- Unique proposal ID
-  , proposalTitle      :: BuiltinByteString    -- DFCTProposal title
-  , proposalDescription :: BuiltinByteString   -- DFCTProposal description
   , proposer           :: PubKeyHash           -- Proposer’s public key hash
   , votingStart        :: POSIXTime            -- Voting start time
   , votingEnd          :: POSIXTime            -- Voting end time
@@ -177,8 +175,6 @@ mkGovernanceValidator rawData =
 validateProposalSubmission :: DFCTProposal -> DFCTGovernanceParams -> TxInfo -> Bool
 validateProposalSubmission prop params info =
   lengthOfByteString (proposalId prop) > 0 &&
-  lengthOfByteString (proposalTitle prop) > 0 &&
-  lengthOfByteString (proposalDescription prop) > 0 &&
   Contexts.txSignedBy info (proposer prop) &&
   (proposer prop == gpOwner params || isAuthorizedSubmitter (proposer prop) (gpAuthorizedPKHs params))
 

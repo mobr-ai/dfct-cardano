@@ -31,8 +31,6 @@ defaultGovernanceParams = DFCTGovernanceParams
 defaultProposal :: DFCTProposal
 defaultProposal = DFCTProposal
   { proposalId = PlutusTx.toBuiltin (BS.pack "proposal1")
-  , proposalTitle = PlutusTx.toBuiltin (BS.pack "Test DFCTProposal")
-  , proposalDescription = PlutusTx.toBuiltin (BS.pack "A test governance proposal")
   , proposer = defaultAuth
   , votingStart = 1000
   , votingEnd = 2000
