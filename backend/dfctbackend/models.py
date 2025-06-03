@@ -63,6 +63,8 @@ class ContributionSubmitRequest(BaseModel):
 
     topic_id: str = Field(description="ID of the topic to contribute to")
     contribution_id: str = Field(description="ID of the contribution")
+    contribution_type: ContributionType = Field(description="Type of the contribution")
+    lovelace_amount: int = Field(default=70000000, description="Amount of lovelace to fund the contribution")
     contributor_wallet_info: WalletInfo = Field(description="Contributor wallet info")
 
 class ContributionReviewRequest(BaseModel):

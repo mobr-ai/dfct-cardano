@@ -3,11 +3,11 @@ from typing import Any, Optional, Tuple
 import logging
 
 from dfctbackend.config import settings
-from dfctbackend.cardano.datum import TopicStatus, ContributionStatus
+from dfctbackend.cardano.datum import TopicStatus, ContributionStatus, ContributionType
 from dfctbackend.cardano.wallet import CardanoWallet
-from dfctbackend.cardano.transaction import FUND_FEE
 from dfctbackend.cardano.utils import write_temp_json
 from dfctbackend.cardano.contract import Contract, ContractError
+from dfctbackend.cardano.transaction import MAX_ATTEMPTS, WAIT_DATA_SYNC
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,8 @@ class ProvenanceContract(Contract):
         """Write datum and redeemer to temporary JSON files."""
         datum_file = f"{file_prefix}-datum-{id_str}.json"
         redeemer_file = f"{file_prefix}-redeemer-{id_str}.json"
-        write_temp_json(datum, datum_file)
-        write_temp_json(redeemer, redeemer_file)
+        write_temp_json(datum, datum_file, self.tx.assets_path)
+        write_temp_json(redeemer, redeemer_file, self.tx.assets_path)
         return datum_file, redeemer_file
 
     def _prepare_topic_output(self, topic_utxo: Any, validator_addr_str: str) -> str:
@@ -32,6 +32,33 @@ class ProvenanceContract(Contract):
         topic_lovelace = topic_utxo.output.amount.coin
         return f"{validator_addr_str}+{topic_lovelace}+\"{token_output}\""
 
+    def _add_change_output(self, build_cmd: list[str], wallet_addr: str, input_utxos: list, output_value: int, token_amount: int) -> list[str]:
+        """Add a change output to conserve remaining assets."""
+        total_input_lovelace = sum(int(utxo.output.amount.coin) for utxo in input_utxos)
+        total_input_tokens = sum(self.tx.get_cnt_amount(utxo, self.policy_id) for utxo in input_utxos)
+        output_lovelace = output_value
+        output_tokens = token_amount
+        change_lovelace = total_input_lovelace - output_lovelace - 2000000  # Subtract estimated fee
+        change_tokens = total_input_tokens - output_tokens
+        if change_lovelace > 0:
+            if change_tokens > 0:
+                build_cmd += ["--tx-out", f"{wallet_addr}+{change_lovelace}+\"{change_tokens} {self.policy_id}.{self.token_name_hex}\""]
+            else:
+                build_cmd += ["--tx-out", f"{wallet_addr}+{change_lovelace}"]
+        return build_cmd
+
+    def get_contract_utxo_and_datum(self, id_str: str) -> tuple[Any, Any]:
+        """Get UTxO and datum for a given ID, with chain sync."""
+        attempt = 0
+        while attempt < MAX_ATTEMPTS:
+            utxos = self.tx.find_utxos_at_address(self.validator_address)
+            utxo, datum = self.dp.find_utxo_with_datum_id(utxos, id_str)
+            if utxo:
+                return utxo, datum
+            time.sleep(WAIT_DATA_SYNC)
+            attempt += 1
+        return None, None
+
     def submit_topic(self, topic_id: str, proposer: CardanoWallet, lovelace_amount: int, reward_amount: int = 1000) -> dict[str, str]:
         """
         Submit a new topic to the provenance validator using cardano-cli, following a two-step process:
@@ -40,7 +67,7 @@ class ProvenanceContract(Contract):
         """
         try:
             # Step 1: Prepare topic datum and send tokens to validator
-            topic_datum, redeemer, topic_id = self.dp.prepare_topic_datum_redeemer(
+            topic_datum, redeemer = self.dp.prepare_topic_datum_redeemer(
                 topic_id=topic_id,
                 proposer_pkh=proposer.pub_key_hash,
                 reward_amount=reward_amount
@@ -71,17 +98,18 @@ class ProvenanceContract(Contract):
                 "--tx-in", txin_fee,
                 "--tx-in", txin,
                 "--tx-out", tx_out,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{new_topic_file}",
-                "--out-file", f"{self.docker_assets}/send-dfc-new-topic-to-provenance-{topic_id}.raw"
+                "--tx-out-inline-datum-file", f"{self.docker_assets}/{new_topic_file}"
             ]
-            self.tx.build_and_submit_tx(build_cmd, proposer, f"send-dfc-new-topic-to-provenance")
+            build_cmd = self._add_change_output(build_cmd, proposer_addr_str, [token_utxo], lovelace_amount, reward_amount)
+            out_file = f"{self.docker_assets}/send-dfc-new-topic-to-provenance-{topic_id}"
+            self.tx.build_and_submit_tx(build_cmd, proposer, out_file, f"send-dfc-new-topic-to-provenance")
 
             # Step 2: Consume the UTxO to submit the topic
             topic_utxo, _ = self.get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"No UTxO found for id {topic_id}")
 
-            txin_fee, txin_collateral = self.tx.prepare_tx_inputs(proposer, [token_utxo])
+            txin_fee, txin_collateral = self.tx.prepare_tx_inputs(proposer, [topic_utxo])
             txin_with_tokens = self.tx.create_tx_in(topic_utxo)
             _, invalid_before, invalid_hereafter = self.tx.get_current_slot_and_validity()
             tx_out_submit = self._prepare_topic_output(topic_utxo, validator_addr_str)
@@ -98,10 +126,11 @@ class ProvenanceContract(Contract):
                 "--invalid-before", str(invalid_before),
                 "--invalid-hereafter", str(invalid_hereafter),
                 "--tx-out", tx_out_submit,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{new_topic_file}",
-                "--out-file", f"{self.docker_assets}/new-topic-{topic_id}.raw"
+                "--tx-out-inline-datum-file", f"{self.docker_assets}/{new_topic_file}"
             ]
-            transaction_hash = self.tx.build_and_submit_tx(build_submit_cmd, proposer, f"new-topic")
+            build_submit_cmd = self._add_change_output(build_submit_cmd, proposer_addr_str, [topic_utxo], topic_utxo.output.amount.coin, self.tx.get_cnt_amount(topic_utxo, self.policy_id))
+            out_file = f"{self.docker_assets}/new-topic-{topic_id}"
+            transaction_hash = self.tx.build_and_submit_tx(build_submit_cmd, proposer, out_file, f"new-topic")
 
             logger.info(f"Topic submitted. Topic ID: {topic_id}")
             return {
@@ -180,10 +209,12 @@ class ProvenanceContract(Contract):
                 "--invalid-before", str(invalid_before),
                 "--invalid-hereafter", str(invalid_hereafter),
                 "--tx-out", tx_out,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}",
-                "--out-file", f"{self.docker_assets}/review-topic-{topic_id}.raw"
+                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}"
             ]
-            transaction_hash = self.tx.build_and_submit_tx(build_cmd, reviewer, f"review-topic")
+            build_cmd = self._add_change_output(build_cmd, reviewer_addr_str, [topic_utxo], topic_utxo.output.amount.coin, self.tx.get_cnt_amount(topic_utxo, self.policy_id))
+
+            out_file = f"{self.docker_assets}/review-topic-{topic_id}"
+            transaction_hash = self.tx.build_and_submit_tx(build_cmd, reviewer, out_file, f"review-topic")
 
             logger.info(f"Topic {topic_id} review submitted")
             return {
@@ -238,10 +269,12 @@ class ProvenanceContract(Contract):
                 "--invalid-before", str(invalid_before),
                 "--invalid-hereafter", str(invalid_hereafter),
                 "--tx-out", tx_out,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}",
-                "--out-file", f"{self.docker_assets}/activate-topic-{topic_id}.raw"
+                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}"
             ]
-            transaction_hash = self.tx.build_and_submit_tx(build_cmd, wallet, f"activate-topic")
+            build_cmd = self._add_change_output(build_cmd, wallet_addr_str, [topic_utxo], topic_utxo.output.amount.coin, self.tx.get_cnt_amount(topic_utxo, self.policy_id))
+
+            out_file = f"{self.docker_assets}/activate-topic-{topic_id}"
+            transaction_hash = self.tx.build_and_submit_tx(build_cmd, wallet, out_file, f"activate-topic")
 
             logger.info(f"Topic {topic_id} activation submitted")
             return {
@@ -295,10 +328,12 @@ class ProvenanceContract(Contract):
                 "--invalid-before", str(invalid_before),
                 "--invalid-hereafter", str(invalid_hereafter),
                 "--tx-out", tx_out,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}",
-                "--out-file", f"{self.docker_assets}/close-topic-{topic_id}.raw"
+                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}"
             ]
-            transaction_hash = self.tx.build_and_submit_tx(build_cmd, wallet, f"close-topic")
+            build_cmd = self._add_change_output(build_cmd, wallet_addr_str, [topic_utxo], topic_utxo.output.amount.coin, self.tx.get_cnt_amount(topic_utxo, self.policy_id))
+
+            out_file = f"{self.docker_assets}/close-topic-{topic_id}"
+            transaction_hash = self.tx.build_and_submit_tx(build_cmd, wallet, out_file, f"close-topic")
 
             logger.info(f"Topic {topic_id} close request submitted")
             return {
@@ -343,7 +378,13 @@ class ProvenanceContract(Contract):
             logger.error(f"Failed to get contributions for topic: {str(e)}")
             return []
 
-    def submit_contribution(self, topic_id: str, contribution_id: str, contributor: CardanoWallet) -> dict[str, str]:
+    def submit_contribution(
+        self, topic_id: str,
+        contribution_id: str,
+        contribution_type: ContributionType,
+        lovelace_amount: int,
+        contributor: CardanoWallet
+    ) -> dict[str, str]:
         """
         Submit a contribution to an activated topic.
         """
@@ -357,10 +398,10 @@ class ProvenanceContract(Contract):
             if topic_status != TopicStatus.ACTIVATED:
                 raise ContractError(f"Topic with ID {topic_id} is not in activated state. Current state is {topic_status}")
 
-            contrib_datum, contrib_redeemer, _ = self.dp.prepare_contribution_datum_redeemer(
+            contrib_datum, contrib_redeemer = self.dp.prepare_contribution_datum_redeemer(
                 contribution_id=contribution_id,
                 topic_id=topic_id,
-                contribution_type="evidence",
+                contribution_type=contribution_type,
                 contributor_pkh=contributor.pub_key_hash,
                 contribution_status=ContributionStatus.PROPOSED,
                 timestamp=int(time.time() * 1000)
@@ -373,12 +414,12 @@ class ProvenanceContract(Contract):
 
             validator_addr_str = str(self.validator_address)
             contributor_addr_str = str(contributor.address)
-            tx_out = f"{validator_addr_str}+{FUND_FEE}"
+            tx_out = f"{validator_addr_str}+{lovelace_amount}"
             tx_out_topic = self._prepare_topic_output(topic_utxo, validator_addr_str)
 
             plutus_datum, _ = self.dp.prepare_topic_json(datum, topic["status"].value)
             topic_datum_file = f"topic-datum-{topic_id}.json"
-            write_temp_json(plutus_datum, topic_datum_file)
+            write_temp_json(plutus_datum, topic_datum_file, self.tx.assets_path)
 
             build_cmd = [
                 "--change-address", contributor_addr_str,
@@ -394,10 +435,12 @@ class ProvenanceContract(Contract):
                 "--tx-out", tx_out,
                 "--tx-out-inline-datum-file", f"{self.docker_assets}/{contrib_datum_file}",
                 "--tx-out", tx_out_topic,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{topic_datum_file}",
-                "--out-file", f"{self.docker_assets}/submit-contribution-{topic_id}.raw"
+                "--tx-out-inline-datum-file", f"{self.docker_assets}/{topic_datum_file}"
             ]
-            transaction_hash = self.tx.build_and_submit_tx(build_cmd, contributor, f"submit-contribution")
+            build_cmd = self._add_change_output(build_cmd, contributor_addr_str, [topic_utxo], lovelace_amount + topic_utxo.output.amount.coin, self.tx.get_cnt_amount(topic_utxo, self.policy_id))
+
+            out_file = f"{self.docker_assets}/submit-contribution-{topic_id}"
+            transaction_hash = self.tx.build_and_submit_tx(build_cmd, contributor, out_file, f"submit-contribution")
 
             logger.info(f"Contribution {contribution_id} for topic {topic_id} submitted")
             return {
@@ -416,8 +459,7 @@ class ProvenanceContract(Contract):
         reviewer: CardanoWallet,
         relevance: int,
         accuracy: int,
-        completeness: int,
-        review_content: str
+        completeness: int
     ) -> dict[str, str]:
         """
         Review a contribution with scores and feedback.
@@ -456,8 +498,8 @@ class ProvenanceContract(Contract):
                 contributor_pkh=contribution["creator"],
                 reviewer_pkh=reviewer.pub_key_hash,
                 review_timestamp=contribution["review_content"]["review_timestamp"],
-                initiator_pkh=contribution["dispute_reason"]["initiator"],
-                dispute_timestamp=contribution["dispute_reason"]["dispute_timestamp"]
+                initiator_pkh=contribution["dispute_content"]["initiator"],
+                dispute_timestamp=contribution["dispute_content"]["dispute_timestamp"]
             )
             datum_file, redeemer_file = self._write_temp_files(updated_datum, redeemer, "reviewed-contribution", contribution_id)
 
@@ -485,9 +527,10 @@ class ProvenanceContract(Contract):
                 "--invalid-hereafter", str(invalid_hereafter),
                 "--tx-out", tx_out_contrib,
                 "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}",
-                "--out-file", f"{self.docker_assets}/review-contribution-{contribution_id}.raw"
             ]
-            transaction_hash = self.tx.build_and_submit_tx(build_cmd, reviewer, f"review-contribution")
+
+            out_file = f"{self.docker_assets}/review-contribution-{contribution_id}"
+            transaction_hash = self.tx.build_and_submit_tx(build_cmd, reviewer, out_file, f"review-contribution")
 
             logger.info(f"Contribution {contribution_id} reviewed with scores - Relevance: {relevance}, Accuracy: {accuracy}, Completeness: {completeness}")
             return {
@@ -505,7 +548,6 @@ class ProvenanceContract(Contract):
     def dispute_contribution(
         self, 
         contribution_id: str,
-        dispute_reason: str,
         contributor: CardanoWallet
     ) -> dict[str, str]:
         """
@@ -528,20 +570,13 @@ class ProvenanceContract(Contract):
 
             redeemer = self.dp.prepare_dispute_contribution_redeemer(
                 contribution_id=contribution_id,
-                contributor_pkh=contributor.pub_key_hash,
-                dispute_reason=dispute_reason
-            )
-            updated_datum = self.dp.prepare_updated_contribution_datum(
-                datum=datum,
-                status=ContributionStatus.DISPUTED,
-                dispute_reason=dispute_reason,
                 contributor_pkh=contributor.pub_key_hash
             )
             updated_datum = self.dp.prepare_contribution_datum(
                 contribution_id=contribution_id,
                 topic_id=topic_id,
                 contribution_type=contribution["type"],
-                contribution_status=ContributionStatus.REVIEWED,
+                contribution_status=ContributionStatus.DISPUTED,
                 contribution_timestamp=contribution["timestamp"],
                 relevance=contribution["relevance"],
                 accuracy=contribution["accuracy"],
@@ -576,10 +611,11 @@ class ProvenanceContract(Contract):
                 "--invalid-before", str(invalid_before),
                 "--invalid-hereafter", str(invalid_hereafter),
                 "--tx-out", tx_out_contrib,
-                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}",
-                "--out-file", f"{self.docker_assets}/dispute-contribution-{contribution_id}.raw"
+                "--tx-out-inline-datum-file", f"{self.docker_assets}/{datum_file}"
             ]
-            transaction_hash = self.tx.build_and_submit_tx(build_cmd, contributor, f"dispute-contribution")
+
+            out_file = f"{self.docker_assets}/dispute-contribution-{contribution_id}"
+            transaction_hash = self.tx.build_and_submit_tx(build_cmd, contributor, out_file, f"dispute-contribution")
 
             logger.info(f"Contribution {contribution_id} dispute request submitted")
             return {

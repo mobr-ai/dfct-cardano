@@ -246,20 +246,32 @@ mv dfct-minting-policy.plutus ../backend/assets
 docker exec -it cardano-node-preview cardano-cli latest transaction policyid --script-file /assets/dfct-minting-policy.plutus > ../backend/assets/dfct-minting-policy.id
 ```
 
-5. Create validator plutus file:
+5. Create provenance and governance plutus files:
 
 **ATTENTION**: Update the dfcSymbol of app/provenance/CompilePV.hs with the dfct-minting-policy.id value
 
 ```bash
-#build the validator smart contract
+#build the provenance validator smart contract
 cabal run dfct-provenance
 
 #move validator plutus to the assets folder
 mv dfct-provenance.plutus ../backend/assets
 
-#calculate the validator script testnet address:
+#calculate the provenance validator script testnet address:
 docker exec -it cardano-node-preview cardano-cli address build --payment-script-file /assets/dfct-provenance.plutus --testnet-magic 2 --out-file /assets/dfct-provenance.addr
 ```
+
+```bash
+#build the governance validator smart contract
+cabal run dfct-governance
+
+#move validator plutus to the assets folder
+mv dfct-governance.plutus ../backend/assets
+
+#calculate the governance validator script testnet address:
+docker exec -it cardano-node-preview cardano-cli address build --payment-script-file /assets/dfct-governance.plutus --testnet-magic 2 --out-file /assets/dfct-governance.addr
+```
+
 
 6. Deploy on testnet
 
@@ -455,19 +467,22 @@ To run specific test categories:
 # Run only unit tests
 poetry run pytest -m unit
 
-# Run only integration tests
-poetry run pytest -m integration
-
 # Run tests for a specific module
-poetry run pytest tests/cardano/test_wallet.py
+poetry run pytest tests/test_governance.py
 ```
 
 Integration test using provenance on testnet
 ```bash
+# ATTENTION:
 # Owner, proposer, reviewer1, and reviewer2 must have:
 # funds from faucet
 # DFC tokens from mint script
-poetry run python integration_test.py
+
+# to run the provenance integration test
+poetry run python integration_test_provenance.py
+
+# to run the governance integration test
+poetry run python integration_test_governance.py
 ```
 
 
@@ -477,6 +492,7 @@ poetry run python integration_test.py
 dfct/
 │
 ├── smart-contract/        # Plutus smart contracts
+│   ├── app/               # Plutus generators
 │   ├── src/               # Smart contract source code
 │   └── test/              # Smart contract tests
 └── backend/               # Python FastAPI backend

@@ -169,6 +169,8 @@ async def submit_contribution(request: ContributionSubmitRequest):
         result = provenance_contract.submit_contribution(
             topic_id=request.topic_id,
             contribution_id=request.contribution_id,
+            lovelace_amount=request.lovelace_amount,
+            contribution_type=request.contribution_type,
             contributor=wallet
         )
         return TransactionResponse(
@@ -275,7 +277,6 @@ async def dispute_contribution(contribution_id: str, request: ContributionDisput
         )
         result = provenance_contract.dispute_contribution(
             contribution_id=contribution_id,
-            dispute_reason=request.dispute_reason,
             contributor=wallet
         )
         return TransactionResponse(

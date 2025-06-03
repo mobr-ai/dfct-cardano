@@ -1,10 +1,7 @@
 import subprocess
 import json
-import os
 import time
 import logging
-
-from dfctbackend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +31,12 @@ class CardanoCli:
                     f"Command executed: {cmd_str}\nStdout:\n{result.stdout}\nStderr:\n{result.stderr}"
                 )
             return result
+
         except subprocess.CalledProcessError as e:
             raise CardanoCliError(
-                f"cardano-cli command failed: Exit code {e.returncode}, "
-                f"Stdout: {e.stdout}, Stderr: {e.stderr}"
+                f"cardano-cli command failed: Exit code {e.returncode}, \n"
+                f"Command: {cmd_str}, \n"
+                f"Stdout: {e.stdout}, Stderr: {e.stderr}  \n"
             )
 
     def get_transaction_hash(self, file_name: str, max_attempts: int = 6, wait_data_sync: int = 15) -> str:
@@ -53,6 +52,7 @@ class CardanoCli:
                     return result.stdout.removesuffix("\n")
                 time.sleep(wait_data_sync)
                 attempt_nr += 1
+
             except CardanoCliError:
                 return ""
         return ""

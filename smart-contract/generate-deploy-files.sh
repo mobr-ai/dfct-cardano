@@ -70,12 +70,6 @@ cat > "$ASSETS_PATH/submit-topic-redeemer.json" <<EOF
               "bytes": "${TOPIC_ID_HEX}"
             },
             {
-              "bytes": "${TOPIC_TITLE_HEX}"
-            },
-            {
-              "bytes": "${TOPIC_DESC_HEX}"
-            },
-            {
               "bytes": "${PROPOSER_PKH}"
             },
             {
@@ -117,12 +111,6 @@ cat > "$ASSETS_PATH/new-topic-datum.json" <<EOF
       "fields": [
         {
           "bytes": "${TOPIC_ID_HEX}"
-        },
-        {
-          "bytes": "${TOPIC_TITLE_HEX}"
-        },
-        {
-          "bytes": "${TOPIC_DESC_HEX}"
         },
         {
           "bytes": "${PROPOSER_PKH}"
