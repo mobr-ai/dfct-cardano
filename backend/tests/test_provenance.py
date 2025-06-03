@@ -75,7 +75,7 @@ class TestDatumProcessor:
     def test_prepare_topic_datum(self):
         """Test preparing topic datum and redeemer."""
         dp = DatumProcessor()
-        datum, redeemer, topic_id = dp.prepare_topic_datum_redeemer(
+        datum, redeemer = dp.prepare_topic_datum_redeemer(
             topic_id="t12345678",
             proposer_pkh="mock_pub_key_hash"
         )
@@ -83,13 +83,12 @@ class TestDatumProcessor:
         assert datum["fields"][0]["fields"][0]["bytes"] == str_to_hex("t12345678")
         assert datum["fields"][0]["fields"][1]["bytes"] == "mock_pub_key_hash"
         assert redeemer["constructor"] == 0
-        assert topic_id == "t12345678"
 
     def test_prepare_contribution_datum(self):
         """Test preparing contribution datum and redeemer."""
         dp = DatumProcessor()
         contribution_id = "c12345678"
-        datum, redeemer, cid = dp.prepare_contribution_datum_redeemer(
+        datum, redeemer = dp.prepare_contribution_datum_redeemer(
             contribution_id=contribution_id,
             topic_id="t12345678",
             contribution_type=ContributionType.EVIDENCE,
@@ -99,7 +98,6 @@ class TestDatumProcessor:
         )
         assert datum["constructor"] == 0
         assert redeemer["constructor"] == 1
-        assert cid == contribution_id
 
     def test_prepare_review_topic_redeemer(self):
         """Test preparing review topic redeemer."""
@@ -285,6 +283,8 @@ class TestAPIRouter:
             json={
                 "topic_id": "t12345678",
                 "contribution_id": "c12345678",
+                "contribution_type": ContributionType.EVIDENCE.value,
+                "lovelace_amount": 0,
                 "contributor_wallet_info": {
                     "name": "test",
                     "address": "addr_test1wzw3dv98lkulug8gh26exeh67qf44lkjtj7eejfrh0skpycfv9hqk",

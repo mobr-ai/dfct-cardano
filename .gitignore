@@ -183,6 +183,7 @@ cython_debug/
 *.json
 *.id
 *.raw
+*.body
 *.signed
 *.skey
 *.vkey

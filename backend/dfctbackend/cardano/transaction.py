@@ -19,7 +19,7 @@ LOVE_THRESHOLD = 1000000
 FUND_FEE       = 2000000 + LOVE_THRESHOLD
 
 MAX_ATTEMPTS   = 6
-WAIT_DATA_SYNC = 15
+WAIT_DATA_SYNC = 30
 
 class TransactionError(Exception):
     """Exception raised for transaction errors."""
@@ -198,14 +198,20 @@ class CardanoTransaction:
 
         return txin_fee, txin_collateral
 
-    def build_and_submit_tx(self, build_cmd: list[str], wallet: CardanoWallet, tx_name: str) -> str:
+    def build_and_submit_tx(
+            self,
+            build_cmd: list[str],
+            wallet: CardanoWallet,
+            out_file: str,
+            tx_name: str
+    ) -> str:
+
         """Build, sign, and submit a transaction, returning the transaction hash."""
-        tx_id = str(uuid.uuid4())
-        raw_file = f"{self.docker_assets}/{tx_name}-{tx_id}.raw"
-        signed_file = f"{self.docker_assets}/{tx_name}-{tx_id}.signed"
+        raw_file = f"{out_file}.raw"
+        signed_file = f"{out_file}.signed"
 
         logger.info(f"Parameters for {tx_name}:\n{build_cmd}")
-        self.cli.build_transaction(build_cmd)
+        self.cli.build_transaction(build_cmd + ["--out-file", raw_file])
 
         self.cli.sign_transaction(
             tx_body_file=raw_file,
@@ -215,4 +221,5 @@ class CardanoTransaction:
 
         self.cli.submit_transaction(signed_file)
         transaction_hash = self.get_transaction_hash(signed_file)
+        #TODO: delete files
         return transaction_hash

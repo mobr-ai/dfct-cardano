@@ -1,12 +1,7 @@
 import os
 import json
 import binascii
-import uuid
 import logging
-from pathlib import Path
-from typing import Any
-
-from pycardano import PlutusV3Script
 
 logger = logging.getLogger(__name__)
 

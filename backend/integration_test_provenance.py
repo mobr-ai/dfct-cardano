@@ -1,10 +1,13 @@
 import logging
 import time
-import sys
+import uuid
 
 from dfctbackend.cardano.wallet import CardanoWallet, local_wallets
-from backend.dfctbackend.cardano.provenance_contract import ProvenanceContract, ContractError, TopicStatus, ContributionStatus
-from dfctbackend.cardano.transaction import CardanoTransaction, MAX_ATTEMPTS, WAIT_DATA_SYNC
+from dfctbackend.cardano.provenance_contract import (
+    ProvenanceContract, ContractError, TopicStatus,
+    ContributionStatus, ContributionType
+)
+from dfctbackend.cardano.transaction import MAX_ATTEMPTS, WAIT_DATA_SYNC
 
 # Configure logging
 logging.basicConfig(
@@ -24,7 +27,7 @@ def create_utxos(wallet: CardanoWallet, utxo_values: list, dfc_reward_pool) -> b
     utxo_values.sort(reverse=True)
 
     largest, largest_value = contract.tx.find_largest_utxo(wallet)
-    if not largest or largest_value < sum(utxo_values):
+    if not largest or largest_value < sum(utxo_values) + 2000000:  # Add buffer for fees
         logger.info(f"{wallet.name} needs funding from faucet")
         return False
 
@@ -32,9 +35,12 @@ def create_utxos(wallet: CardanoWallet, utxo_values: list, dfc_reward_pool) -> b
         wallet.address,
         contract.tx.policy_id,
         contract.tx.token_name,
-        1,
+        1000000,  # Minimum lovelace for token UTxO
         dfc_reward_pool
     )
+    if not dfc_utxo:
+        logger.info(f"No UTxO with sufficient {contract.tx.token_name} tokens found for {wallet.name}")
+        return False
 
     exclude = [dfc_utxo]
     needed = []
@@ -44,37 +50,35 @@ def create_utxos(wallet: CardanoWallet, utxo_values: list, dfc_reward_pool) -> b
             min_lovelace=value,
             exclude=exclude
         )
-
         if not utxos:
             needed.append(value)
         else:
             exclude.append(utxos[0])
 
     if needed:
-        utxos = contract.tx.find_utxos_at_address(
-            address=wallet.address
-        )
+        utxos = contract.tx.find_utxos_at_address(address=wallet.address)
         len_utxos = len(utxos)
-
         for value in needed:
-            logger.info(f"Creating utxo with {value} lovelave for {wallet.name}")
+            logger.info(f"Creating utxo with {value} lovelace for {wallet.name}")
             contract.tx.create_utxo(wallet, largest, value)
             nr_attempts = 0
             while nr_attempts < MAX_ATTEMPTS:
                 time.sleep(WAIT_DATA_SYNC)
                 nr_attempts += 1
-                utxos = contract.tx.find_utxos_at_address(
-                    address=wallet.address
-                )
-                if len_utxos < len(utxos):
+                utxos = contract.tx.find_utxos_at_address(address=wallet.address)
+                if len(utxos) > len_utxos:
                     break
-
                 len_utxos = len(utxos)
-
-            #updating largest utxo info (hash and index)
             largest, largest_value = contract.tx.find_largest_utxo(wallet)
 
     return True
+
+def check_wallets(wallets):
+    collateral_and_fund_fee_values = [5000000, 10000000]
+    for wallet in wallets:
+        if not create_utxos(wallet, collateral_and_fund_fee_values, DFC_REWARD_VALUE):
+            logger.info(f"Use a faucet to fund {wallet.name}")
+            exit(1)
 
 def main():
     """
@@ -87,7 +91,7 @@ def main():
     reviewer1 = local_wallets.get("reviewer1")
     reviewer2 = local_wallets.get("reviewer2")
     contributor = proposer
-    
+
     if not all([proposer, reviewer1, reviewer2, contributor]):
         raise ContractError("Required wallets not found in local_wallets")
 
@@ -99,11 +103,12 @@ def main():
     # Pre-req: check wallets and create collateral and fee fund UTxOs on wallets)
     logger.info(f"Checking wallets")
     wallets = [proposer, reviewer1, reviewer2]
-    collateral_and_fund_fee_values = [5000000, 10000000]
-    for wallet in wallets:
-        if not create_utxos(wallet, collateral_and_fund_fee_values, DFC_REWARD_VALUE):
-            logger.info(f"Use a faucet to fund {wallet.name}")
-            exit(1)
+    check_wallets(wallets)
+
+    ###
+    # Pre-req: define topic_id and contribution_id to use in the integration test
+    topic_id = f"t{uuid.uuid4().hex[:8]}"
+    contribution_id = f"c{uuid.uuid4().hex[:8]}"
 
     ###
     # Step 1: Submit a new topic
@@ -151,7 +156,7 @@ def main():
     assert review_result is not None, "Topic review failed"
     logger.info(f"Topic review submitted. Transaction hash: {review_result.get('transaction_hash', 'unknown')}")
 
-    # Wait sync and then erify topic status after review
+    # Wait sync and then verify topic status after review
     topic_after_review = None
     attempt_nr = 0
     while attempt_nr < MAX_ATTEMPTS:
@@ -197,14 +202,15 @@ def main():
 
     ###
     # Step 5: Submit a contribution (evidence)
-    if not create_utxos(proposer, collateral_and_fund_fee_values, DFC_REWARD_VALUE):
-        logger.info(f"Use a faucet to fund {proposer.name}")
-        exit(1)
+    check_wallets(wallets)
 
     logger.info(f"Submitting contribution to topic {topic_id}...")
     contribution_result = contract.submit_contribution(
+        contribution_id=contribution_id,
         topic_id=topic_id,
-        contributor=contributor
+        contribution_type=ContributionType.EVIDENCE,
+        contributor=contributor,
+        lovelace_amount=FUND_SCRIPT_VALUE
     )
 
     # Assert contribution was submitted
