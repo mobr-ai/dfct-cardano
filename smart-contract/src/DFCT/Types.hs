@@ -110,8 +110,6 @@ PlutusTx.makeLift ''ContributionStatus
 
 data Topic = Topic
     { topicId          :: BuiltinByteString
-    , topicTitle       :: BuiltinByteString
-    , topicDescription :: BuiltinByteString
     , topicProposer    :: PubKeyHash
     , topicTimestamp   :: Integer
     } deriving (Generic)
@@ -123,7 +121,6 @@ data Contribution = Contribution
     { contributionId        :: BuiltinByteString
     , contributionTopicId   :: BuiltinByteString
     , contributionType      :: ContributionType
-    , contributionContent   :: BuiltinByteString
     , contributionCreator   :: PubKeyHash
     , contributionTimestamp :: Integer
     , contributionVersion   :: Integer            -- track version number
@@ -135,10 +132,6 @@ PlutusTx.makeLift ''Contribution
 
 data ReviewContent = ReviewContent
     { reviewerPkh         :: PubKeyHash
-    , refCntribId         :: BuiltinByteString  -- reference to the contribution being reviewed
-    , relevanceReason     :: BuiltinByteString
-    , accuracyReason      :: BuiltinByteString
-    , completenessReason  :: BuiltinByteString
     , reviewTimestamp     :: Integer
     } deriving (Generic)
 
@@ -147,7 +140,6 @@ PlutusTx.makeLift ''ReviewContent
 
 data DisputeReason = DisputeReason
     { disputeInitiator  :: PubKeyHash
-    , disputeContent    :: BuiltinByteString
     , disputeTimestamp  :: Integer
     } deriving (Generic)
 
@@ -181,8 +173,8 @@ data ContributionDatum = ContributionDatum
     , relevance          :: Integer
     , accuracy           :: Integer
     , completeness       :: Integer
-    , revContent         :: ReviewContent   --  Store detailed review reasoning
-    , dispReason         :: DisputeReason   --  Store dispute history
+    , revContent         :: ReviewContent   --  Store review action
+    , dispReason         :: DisputeReason   --  Store dispute action
     , timelinessScore    :: Integer         --  Track timeliness for bonus calculation
     } deriving (Generic)
 

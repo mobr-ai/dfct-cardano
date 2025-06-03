@@ -11,7 +11,7 @@ from dfctbackend.models import (
 from dfctbackend.cardano.provenance_contract import ProvenanceContract
 from dfctbackend.cardano.governance_contract import GovernanceContract
 from dfctbackend.cardano.transaction import TransactionError
-from dfctbackend.cardano.wallet import get_wallet_by_name, local_wallets
+from dfctbackend.cardano.wallet import local_wallets, CardanoWallet
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,15 @@ async def submit_topic(request: TopicSubmitRequest):
         TransactionResponse: Transaction response.
     """
     try:
-        wallet = local_wallets["proposer"]
+        proposer = CardanoWallet.create_wallet(
+            request.proposer_wallet_info.name,
+            request.proposer_wallet_info.pub_key_hash,
+            request.proposer_wallet_info.address,
+            request.proposer_wallet_info.skey
+        )
         result = provenance_contract.submit_topic(
-            proposer=wallet,
-            title=request.title,
-            description=request.description,
+            proposer=proposer,
+            topic_id=request.topic_id,
             lovelace_amount=request.lovelace_amount,
             reward_amount=request.reward_amount
         )
@@ -62,40 +66,14 @@ async def review_topic(request: TopicReviewRequest):
         TransactionResponse: Transaction response.
     """
     try:
-        wallet = local_wallets["reviewer1"]
-        result = provenance_contract.review_topic(
-            wallet=wallet,
-            topic_id=request.topic_id,
-            approved=request.approved
+        reviewer = CardanoWallet.create_wallet(
+            request.reviewer_wallet_info.name,
+            request.reviewer_wallet_info.pub_key_hash,
+            request.reviewer_wallet_info.address,
+            request.reviewer_wallet_info.skey
         )
-        return TransactionResponse(
-            transaction_hash=result["transaction_hash"],
-            topic_id=request.topic_id
-        )
-    except TransactionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reviewing topic: {str(e)}")
-
-@router.post("/topic/{wallet_name}/review", response_model=TransactionResponse)
-async def review_topic_with_wallet(wallet_name: str, request: TopicReviewRequest):
-    """
-    Review a topic using a specific wallet.
-    
-    Args:
-        wallet_name: Name of the wallet to use.
-        request: Topic review request.
-        
-    Returns:
-        TransactionResponse: Transaction response.
-    """
-    wallet = get_wallet_by_name(wallet_name)
-    if not wallet:
-        raise HTTPException(status_code=404, detail=f"Wallet '{wallet_name}' not found")
-    
-    try:
         result = provenance_contract.review_topic(
-            wallet=wallet,
+            wallet=reviewer,
             topic_id=request.topic_id,
             approved=request.approved
         )
@@ -114,8 +92,8 @@ async def activate_topic(request: TopicActivateRequest):
     Activate a reviewed topic.
     
     Args:
-        request: Topic activation request.
-        
+        request: Topic activation request. Currently only the owner can activate a topic
+
     Returns:
         TransactionResponse: Transaction response.
     """
@@ -181,11 +159,16 @@ async def submit_contribution(request: ContributionSubmitRequest):
         TransactionResponse: Transaction response.
     """
     try:
-        wallet = local_wallets["proposer"]
+        wallet = CardanoWallet.create_wallet(
+            request.contributor_wallet_info.name,
+            request.contributor_wallet_info.pub_key_hash,
+            request.contributor_wallet_info.address,
+            request.contributor_wallet_info.skey
+        )
+
         result = provenance_contract.submit_contribution(
             topic_id=request.topic_id,
-            content=request.content,
-            contribution_type=request.contribution_type.value,
+            contribution_id=request.contribution_id,
             contributor=wallet
         )
         return TransactionResponse(
@@ -210,51 +193,18 @@ async def review_contribution(request: ContributionReviewRequest):
         TransactionResponse: Transaction response.
     """
     try:
-        wallet = local_wallets["reviewer1"]
-        review_content = request.comment or "Review completed"
+        wallet = CardanoWallet.create_wallet(
+            request.reviewer_wallet_info.name,
+            request.reviewer_wallet_info.pub_key_hash,
+            request.reviewer_wallet_info.address,
+            request.reviewer_wallet_info.skey
+        )
         result = provenance_contract.review_contribution(
             contribution_id=request.contribution_id,
             reviewer=wallet,
             relevance=request.relevance,
             accuracy=request.accuracy,
             completeness=request.completeness,
-            review_content=review_content,
-            approved=request.approved
-        )
-        return TransactionResponse(
-            transaction_hash=result["transaction_hash"],
-            contribution_id=request.contribution_id
-        )
-    except TransactionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reviewing contribution: {str(e)}")
-
-@router.post("/contribution/{wallet_name}/review", response_model=TransactionResponse)
-async def review_contribution_with_wallet(wallet_name: str, request: ContributionReviewRequest):
-    """
-    Review a contribution with a specific wallet.
-    
-    Args:
-        wallet_name: Name of the wallet to use
-        request: Contribution review request.
-        
-    Returns:
-        TransactionResponse: Transaction response.
-    """
-    wallet = get_wallet_by_name(wallet_name)
-    if not wallet:
-        raise HTTPException(status_code=404, detail=f"Wallet '{wallet_name}' not found")
-    
-    try:
-        review_content = request.comment or "Review completed"
-        result = provenance_contract.review_contribution(
-            contribution_id=request.contribution_id,
-            reviewer=wallet,
-            relevance=request.relevance,
-            accuracy=request.accuracy,
-            completeness=request.completeness,
-            review_content=review_content,
             approved=request.approved
         )
         return TransactionResponse(
@@ -317,7 +267,12 @@ async def dispute_contribution(contribution_id: str, request: ContributionDisput
         TransactionResponse: Transaction response.
     """
     try:
-        wallet = local_wallets["proposer"]
+        wallet = CardanoWallet.create_wallet(
+            request.proposer_wallet_info.name,
+            request.proposer_wallet_info.pub_key_hash,
+            request.proposer_wallet_info.address,
+            request.proposer_wallet_info.skey
+        )
         result = provenance_contract.dispute_contribution(
             contribution_id=contribution_id,
             dispute_reason=request.dispute_reason,
@@ -338,7 +293,7 @@ async def close_topic(topic_id: str):
     Close a topic.
     
     Args:
-        topic_id: ID of the topic to close.
+        topic_id: ID of the topic to close. Currently only the owner can close a topic
         
     Returns:
         TransactionResponse: Transaction response.
@@ -357,30 +312,6 @@ async def close_topic(topic_id: str):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error closing topic: {str(e)}")
-
-@router.get("/status/{tx_hash}", response_model=dict[str, Any])
-async def check_transaction_status(tx_hash: str):
-    """
-    Check the status of a transaction.
-    
-    Args:
-        tx_hash: Transaction hash.
-        
-    Returns:
-        dict[str, Any]: Transaction status.
-    """
-    try:
-        tx_status = provenance_contract.tx_handler.get_transaction_status(tx_hash)
-        return {
-            "status": tx_status["status"],
-            "confirmed_block": tx_status.get("confirmed_block"),
-            "confirmation_time": tx_status.get("confirmation_time"),
-            "transaction_hash": tx_hash
-        }
-    except TransactionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error checking transaction status: {str(e)}")
 
 @router.get("/reviewers", response_model=list[dict])
 async def get_all_reviewers():
@@ -411,13 +342,16 @@ async def submit_proposal(request: ProposalSubmitRequest):
     Submit a new governance proposal.
     """
     try:
-        wallet = local_wallets["proposer"]
+        wallet = CardanoWallet.create_wallet(
+            request.proposer_wallet_info.name,
+            request.proposer_wallet_info.pub_key_hash,
+            request.proposer_wallet_info.address,
+            request.proposer_wallet_info.skey
+        )
         result = governance_contract.submit_proposal(
             proposer=wallet,
-            title=request.title,
-            description=request.description,
-            lovelace_amount=request.lovelace_amount,
-            reward_amount=request.reward_amount
+            proposal_id=request.proposal_id,
+            lovelace_amount=request.lovelace_amount
         )
         return TransactionResponse(
             transaction_hash=result["transaction_hash"],
@@ -434,7 +368,12 @@ async def vote_on_proposal(request: VoteRequest):
     Cast a vote on a governance proposal.
     """
     try:
-        wallet = local_wallets["proposer"]
+        wallet = CardanoWallet.create_wallet(
+            request.voter_wallet_info.name,
+            request.voter_wallet_info.pub_key_hash,
+            request.voter_wallet_info.address,
+            request.voter_wallet_info.skey
+        )
         result = governance_contract.vote_on_proposal(
             proposal_id=request.proposal_id,
             voter=wallet,
@@ -453,7 +392,7 @@ async def vote_on_proposal(request: VoteRequest):
 @router.post("/governance/proposal/finalize", response_model=TransactionResponse)
 async def finalize_proposal(request: FinalizeProposalRequest):
     """
-    Finalize a governance proposal.
+    Finalize a governance proposal. Currently only the owner can finalize a proposal.
     """
     try:
         wallet = local_wallets["owner"]

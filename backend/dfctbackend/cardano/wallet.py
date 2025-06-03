@@ -1,6 +1,5 @@
-from typing import Any, Optional
-from pathlib import Path
-from pycardano import Address, PaymentSigningKey
+from typing import Optional
+from pycardano import Address
 import logging
 
 from dfctbackend.config import settings
@@ -17,11 +16,10 @@ class CardanoWallet:
         """
         self.name = name
         self.addr_path = settings.ASSETS_DIR / f"{name}.addr"
-        self.vkey_path = settings.ASSETS_DIR / f"{name}.vkey"
         self.skey_path = settings.ASSETS_DIR / f"{name}.skey"
         self.pkh_path = settings.ASSETS_DIR / f"{name}.pkh"
         self._address = None
-        self._payment_key_hash = None
+        self._pub_key_hash = None
         self._load_wallet_data()
 
     def _load_wallet_data(self):
@@ -31,9 +29,52 @@ class CardanoWallet:
                 self._address = Address.from_primitive(f.read().strip())
 
             with open(self.pkh_path, "r") as f:
-                self._payment_key_hash = f.read().strip()
+                self._pub_key_hash = f.read().strip()
+
         except Exception as e:
             raise ValueError(f"Failed to load wallet data for {self.name}: {str(e)}")
+
+    @staticmethod
+    def create_wallet(name: str, pub_key_hash: str, address: str, skey: str) -> 'CardanoWallet':
+        """
+        Create a new wallet by writing provided data to files and return a CardanoWallet instance.
+
+        Args:
+            name: The name of the wallet
+            pub_key_hash: The public key hash
+            address: The wallet address
+            skey: The signing key
+
+        Returns:
+            CardanoWallet: A new wallet instance loaded from the created files
+
+        Raises:
+            ValueError: If file creation fails
+        """
+        try:
+            # Ensure assets directory exists
+            settings.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+            # Write address to .addr file
+            addr_path = settings.ASSETS_DIR / f"{name}.addr"
+            with open(addr_path, "w") as f:
+                f.write(address.strip())
+
+            # Write signing key to .skey file
+            skey_path = settings.ASSETS_DIR / f"{name}.skey"
+            with open(skey_path, "w") as f:  # Fix: Removed .writer
+                f.write(skey.strip())
+
+            # Write public key hash to .pkh file
+            pkh_path = settings.ASSETS_DIR / f"{name}.pkh"
+            with open(pkh_path, "w") as f:
+                f.write(pub_key_hash.strip())
+
+            # Return new wallet instance
+            return CardanoWallet(name)
+
+        except Exception as e:
+            raise ValueError(f"Failed to create wallet {name}: {str(e)}")
 
     @property
     def address(self) -> Optional[Address]:
@@ -46,42 +87,14 @@ class CardanoWallet:
         return str(self._address) if self._address else None
 
     @property
-    def public_key_hash(self) -> Optional[str]:
+    def pub_key_hash(self) -> Optional[str]:
         """Get the payment key hash."""
-        return self._payment_key_hash
+        return self._pub_key_hash
 
-    @property
-    def payment_signing_key(self) -> Optional[PaymentSigningKey]:
-        """Get the payment signing key."""
-        if self.skey_path.exists():
-            try:
-                with open(self.skey_path, 'r') as f:
-                    return PaymentSigningKey.from_json(f.read())
-            except Exception as e:
-                logger.error(f"Failed to load signing key for {self.name}: {str(e)}")
-                raise ValueError(f"Failed to load signing key: {str(e)}")
-        return None
-
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Convert wallet information to a dictionary.
-        """
-        return {
-            "name": self.name,
-            "address": self.address_str,
-            "public_key_hash": self.public_key_hash
-        }
-
-# Initialize wallets
+# Initialize local wallets
 local_wallets = {
     "owner": CardanoWallet("owner"),
     "proposer": CardanoWallet("proposer"),
     "reviewer1": CardanoWallet("reviewer1"),
     "reviewer2": CardanoWallet("reviewer2")
 }
-
-def get_wallet_by_name(name: str) -> Optional[CardanoWallet]:
-    """
-    Get a wallet by name.
-    """
-    return local_wallets.get(name.lower())

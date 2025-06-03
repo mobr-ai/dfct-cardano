@@ -17,19 +17,17 @@ class ContractError(Exception):
 
 class Contract:
     """Base class for Cardano smart contract interactions on the Preview Testnet."""
-    
+
     def __init__(self, validator_address: str):
         """Initialize the contract with chain context and transaction handling."""
         try:
-            self.transactions = CardanoTransaction()
+            self.tx = CardanoTransaction()
             self.dp = DatumProcessor()
             self.policy_id = settings.POLICY_ID
             self.validator_address = Address.from_primitive(validator_address)
             self.token_name = settings.TOKEN_NAME
             self.token_name_hex = str_to_hex(settings.TOKEN_NAME)
             self.docker_assets = settings.DOCKER_ASSETS_DIR
-            self.testnet_magic = self.transactions.cli.testnet_magic
-            self.socket_path = self.transactions.cli.socket_path
 
             logger.info(f"Initialized contract with policy_id: {self.policy_id}, validator_address: {self.validator_address}")
 
@@ -37,11 +35,11 @@ class Contract:
             logger.error(f"Failed to initialize contract: {str(e)}")
             raise ContractError(f"Failed to initialize contract: {str(e)}")
 
-    def get_utxo_and_datum(self, str_id: str) -> tuple[Any, Any]:
+    def get_contract_utxo_and_datum(self, str_id: str) -> tuple[Any, Any]:
         """Find UTxO and datum for a given ID."""
         attempt_nr = 0
         while attempt_nr < MAX_ATTEMPTS:
-            utxos = self.transactions.find_utxos_at_address(self.validator_address)
+            utxos = self.tx.find_utxos_at_address(self.validator_address)
             utxo, datum = self.dp.find_utxo_with_datum_id(utxos, str_id)
             if utxo and datum:
                 return utxo, datum

@@ -7,9 +7,7 @@ from enum import Enum
 
 from dfctbackend.config import settings
 from dfctbackend.cardano.wallet import local_wallets
-from dfctbackend.cardano.utils import (
-    generate_topic_id, str_to_hex
-)
+from dfctbackend.cardano.utils import str_to_hex
 
 class TopicStatus(Enum):
     PROPOSED = 0
@@ -74,10 +72,8 @@ class DatumProcessor:
 
         plutus_topic = [
             {"bytes": str_to_hex(topic[0])},  # topicId
-            {"bytes": str_to_hex(topic[1])},  # topicTitle
-            {"bytes": str_to_hex(topic[2])},  # topicDescription
-            {"bytes": topic[3]},  # topicProposer
-            {"int":   topic[4]}   # topicTimestamp
+            {"bytes": topic[1]},  # topicProposer
+            {"int":   topic[2]}   # topicTimestamp
         ]
 
         plutus_rpi = [
@@ -129,8 +125,7 @@ class DatumProcessor:
 
     def prepare_topic_datum_redeemer(
         self,
-        title: str,
-        description: str,
+        topic_id: str,
         proposer_pkh: str,
         reward_amount: int = 1000,
         reviewers: list[str] = None
@@ -140,13 +135,12 @@ class DatumProcessor:
         """
         if reviewers is None:
             reviewers = [
-                local_wallets["reviewer1"].public_key_hash,
-                local_wallets["reviewer2"].public_key_hash
+                local_wallets["reviewer1"].pub_key_hash,
+                local_wallets["reviewer2"].pub_key_hash
             ]
 
-        topic_id = generate_topic_id()
         current_time = int(time.time() * 1000)
-        topic_list = [topic_id, title, description, proposer_pkh, current_time]
+        topic_list = [topic_id, proposer_pkh, current_time]
         rpi_list = [reward_amount, 0, self.token_name, current_time]
         datum, redeemer = self._prepare_topic_json(topic_list, TopicStatus.PROPOSED.value, rpi_list, reviewers)
 
@@ -182,10 +176,9 @@ class DatumProcessor:
         self,
         contribution_id: str,
         topic_id: str,
-        contribution_type: str,
-        content: str,
+        contribution_type: ContributionType,
         contributor_pkh: str,
-        contribution_status: int,
+        contribution_status: ContributionStatus,
         timestamp: int
     ) -> tuple[dict[str, Any], dict[str, Any], str]:
         """
@@ -193,70 +186,28 @@ class DatumProcessor:
         """
         contribution_id_hex = str_to_hex(contribution_id)
         topic_id_hex = str_to_hex(topic_id)
-        content_hex = str_to_hex(content)
-        contribution_type_hex = str_to_hex(contribution_type)  # Default type
 
         plutus_contribution = [
             {"bytes": contribution_id_hex},
             {"bytes": topic_id_hex},
-            {"bytes": contribution_type_hex},
-            {"bytes": content_hex},
+            {"int": contribution_type.value},
             {"bytes": contributor_pkh},
             {"int": timestamp},
             {"int": 1},  # version
             {"bytes": ""}  # previous version ID (empty for first version)
         ]
 
-        # Create empty ReviewContent
-        empty_review_content = {
-            "constructor": 0,
-            "fields": [
-                {"bytes": ""},  # reviewerPkh (empty for new contributions)
-                {"bytes": ""},  # refCntribId (empty for new contributions)
-                {"bytes": ""},  # relevanceReason (empty for new contributions)
-                {"bytes": ""},  # accuracyReason (empty for new contributions)
-                {"bytes": ""},  # completenessReason (empty for new contributions)
-                {"int": 0}      # reviewTimestamp (0 for new contributions)
-            ]
-        }
-
-        # Create empty DisputeReason
-        empty_dispute_reason = {
-            "constructor": 0,
-            "fields": [
-                {"bytes": ""},  # disputeInitiator (empty for new contributions)
-                {"bytes": ""},  # disputeContent (empty for new contributions)
-                {"int": 0}      # disputeTimestamp (0 for new contributions)
-            ]
-        }
-
         # Create the contribution datum
-        datum = {
-            "constructor": 0,
-            "fields": [
-                {
-                    "constructor": 0,
-                    "fields": plutus_contribution
-                },
-                {
-                    "constructor": contribution_status,
-                    "fields": []
-                },
-                {"int": 0},  # relevance
-                {"int": 0},  # accuracy
-                {"int": 0},  # completeness
-                empty_review_content,
-                empty_dispute_reason,
-                {"int": 0}   # timelinessScore (will be calculated on-chain)
-            ]
-        }
+        datum = self.prepare_contribution_datum(
+            contribution_id, topic_id, contribution_type, contribution_status, timestamp
+        )
 
-        # Create the redeemer for SubmitEvidence
+        # Create the redeemer for SubmitContribution
         redeemer = {
             "constructor": 1,  # ContributionAction
             "fields": [
                 {
-                    "constructor": 0,  # SubmitEvidence
+                    "constructor": 0,  # SubmitContribution
                     "fields": [
                         {
                             "constructor": 0,
@@ -266,8 +217,73 @@ class DatumProcessor:
                 }
             ]
         }
-    
+
         return datum, redeemer, contribution_id
+
+    def prepare_contribution_datum(
+        self,
+        contribution_id: str,
+        topic_id: str,
+        contribution_type: ContributionType,
+        contribution_status: ContributionStatus,
+        contribution_timestamp: int,
+        relevance: int = 0,
+        accuracy: int = 0,
+        completeness: int = 0,
+        contributor_pkh: str = "",
+        reviewer_pkh: str = "",
+        review_timestamp: int = 0,
+        initiator_pkh: str = "",
+        dispute_timestamp: int = 0
+    ) -> dict[str, Any]:
+        """
+        Prepare a contribution datum
+        """
+        empty_dispute_reason = {
+            "constructor": 0,
+            "fields": [
+                {"bytes": initiator_pkh},  # disputeInitiator (empty for new contributions)
+                {"int": dispute_timestamp}      # disputeTimestamp (0 for new contributions)
+            ]
+        }
+
+        review_content = {
+            "constructor": 0,
+            "fields": [
+                {"bytes": reviewer_pkh},                # reviewerPkh (empty for new contributions)
+                {"int": review_timestamp}               # reviewTimestamp (0 for new contributions)
+            ]
+        }
+
+        plutus_contribution = [
+            {"bytes": str_to_hex(contribution_id)},
+            {"bytes": str_to_hex(topic_id)},
+            {"int": contribution_type.value},
+            {"bytes": contributor_pkh},
+            {"int": contribution_timestamp},
+            {"int": 1},  # version
+            {"bytes": ""}  # previous version ID (empty for first version)
+        ]
+
+        return {
+            "constructor": 0,
+            "fields": [
+                {
+                    "constructor": 0,
+                    "fields": plutus_contribution
+                },
+                {
+                    "constructor": contribution_status.value,
+                    "fields": []
+                },
+                {"int": relevance},
+                {"int": accuracy},
+                {"int": completeness},
+                review_content,
+                empty_dispute_reason,
+                {"int": 0}   # timelinessScore (will be calculated on-chain)
+            ]
+        }
 
     def prepare_review_contribution_redeemer(
         self,
@@ -275,8 +291,7 @@ class DatumProcessor:
         reviewer_pkh: str,
         relevance: int,
         accuracy: int,
-        completeness: int,
-        review_content: str
+        completeness: int
     ) -> dict[str, Any]:
         """
         Prepare a review contribution redeemer.
@@ -289,10 +304,6 @@ class DatumProcessor:
             "constructor": 0,
             "fields": [
                 {"bytes": reviewer_pkh},
-                {"bytes": contribution_id_hex},
-                {"bytes": str_to_hex("Relevance: " + review_content)},   # Relevance reason
-                {"bytes": str_to_hex("Accuracy: " + review_content)},    # Accuracy reason
-                {"bytes": str_to_hex("Completeness: " + review_content)},# Completeness reason
                 {"int": current_time}
             ]
         }
@@ -319,22 +330,19 @@ class DatumProcessor:
     def prepare_dispute_contribution_redeemer(
         self,
         contribution_id: str,
-        contributor_pkh: str,
-        dispute_reason: str
+        contributor_pkh: str
     ) -> dict[str, Any]:
         """
         Prepare a dispute contribution redeemer.
         """
         contribution_id_hex = str_to_hex(contribution_id)
-        dispute_reason_hex = str_to_hex(dispute_reason)
         current_time = int(time.time() * 1000)
 
         # Create dispute reason structure
         dispute_reason_obj = {
-            "constructor": 0,
+            "constructor": 3,
             "fields": [
                 {"bytes": contributor_pkh},
-                {"bytes": dispute_reason_hex},
                 {"int": current_time}
             ]
         }
@@ -401,10 +409,8 @@ class DatumProcessor:
 
             topic_details = topic_datum[0]
             topic_id = topic_details[0]
-            title = topic_details[1]
-            description = topic_details[2]
-            proposer = topic_details[3]
-            timestamp = topic_details[4]
+            proposer = topic_details[1]
+            timestamp = topic_details[2]
             status = self.extract_status_from_datum(topic_datum)
 
             # Get reward pool information - third element
@@ -422,8 +428,6 @@ class DatumProcessor:
             # Construct the result
             result = {
                 "topic_id": topic_id,
-                "title": title,
-                "description": description,
                 "proposer": proposer,
                 "timestamp": timestamp,
                 "status": TopicStatus(status),
@@ -440,93 +444,70 @@ class DatumProcessor:
 
         except Exception as e:
             logger.error(f"Failed to extract topic data: {str(e)}")
-            # Print more detailed error information for debugging
-            import traceback
-            logger.error(traceback.format_exc())
             return {}
 
     def extract_contribution_from_datum(self, datum: list[Any]) -> dict[str, Any]:
-        """
-        Extract contribution data from its datum structure.
-        """
         try:
-            if len(datum) < 5:
+            if len(datum) < 8:
                 return None
 
             # Extract contribution details
             contribution_details = datum[0]
             contribution_id = contribution_details[0]
             topic_id = contribution_details[1]
-            contribution_type = contribution_details[2]
-            content = contribution_details[3]
-            creator = contribution_details[4]
-            timestamp = contribution_details[5]
-            version = contribution_details[6]
-            previous_version_id = contribution_details[7]
-            status = self.extract_status_from_datum(datum)
+            contribution_type = ContributionType(int(contribution_details[2]))
+            creator = contribution_details[3]
+            timestamp = contribution_details[4]
+            version = contribution_details[5]
+            previous_version_id = contribution_details[6]
+            status = self.extract_status_from_datum([datum[2]])
 
             # Get review scores
-            relevance = datum[2]
-            accuracy = datum[3]
-            completeness = datum[4]
+            relevance = datum[3]
+            accuracy = datum[4]
+            completeness = datum[5]
 
             # Get review content
             review_content = {}
-            if len(datum) > 5:
-                d_review_content = datum[5]
-                if isinstance(d_review_content, list) and len(d_review_content) >= 6:
+            if len(datum) > 6:
+                d_review_content = datum[6]
+                if isinstance(d_review_content, list) and len(d_review_content) >= 2:
                     try:
                         reviewer = d_review_content[0]
-                        ref_contribution_id = d_review_content[1]
-                        relevance_reason = d_review_content[2]
-                        accuracy_reason = d_review_content[3]
-                        completeness_reason = d_review_content[4]
-                        review_timestamp = d_review_content[5]
-
+                        review_timestamp = d_review_content[1]
                         review_content = {
                             "reviewer": reviewer,
-                            "contribution_id": ref_contribution_id,
-                            "relevance_reason": relevance_reason,
-                            "accuracy_reason": accuracy_reason,
-                            "completeness_reason": completeness_reason,
-                            "timestamp": review_timestamp
+                            "review_timestamp": review_timestamp
                         }
-
                     except Exception as e:
                         logger.warning(f"Error processing review content: {e}")
 
             # Get dispute reason
             dispute_reason = {}
-            if len(datum) > 6:
-                d_dispute_reason = datum[6]
-                if isinstance(d_dispute_reason, list) and len(d_dispute_reason) >= 3:
+            if len(datum) > 7:
+                d_dispute_reason = datum[7]
+                if isinstance(d_dispute_reason, list) and len(d_dispute_reason) >= 2:
                     try:
                         initiator = d_dispute_reason[0]
-                        reason = d_dispute_reason[1]
-                        dispute_timestamp = d_dispute_reason[2]
-
+                        dispute_timestamp = d_dispute_reason[1]
                         dispute_reason = {
                             "initiator": initiator,
-                            "reason": reason,
-                            "timestamp": dispute_timestamp
+                            "dispute_timestamp": dispute_timestamp
                         }
-
                     except Exception as e:
                         logger.warning(f"Error processing dispute reason: {e}")
 
             # Get timeliness score
-            timeliness_score = datum[7] if len(datum) > 7 else 0
+            timeliness_score = datum[8] if len(datum) > 8 else 0
             timeliness_int = int(timeliness_score) if isinstance(timeliness_score, (int, str)) else 0
 
-            # Calculate total score based on the 3 review scores + timeliness
+            # Calculate total score
             total_score = int(relevance) + int(accuracy) + int(completeness) + int(timeliness_int)
 
-            # Construct the result
             result = {
                 "contribution_id": contribution_id,
                 "topic_id": topic_id,
                 "type": contribution_type,
-                "content": content,
                 "creator": creator,
                 "timestamp": timestamp,
                 "version": version,
@@ -545,31 +526,21 @@ class DatumProcessor:
 
         except Exception as e:
             logger.error(f"Failed to extract contribution data: {str(e)}")
-            # Print more detailed error information for debugging
-            import traceback
-            logger.error(traceback.format_exc())
             return {}
-
 
     def prepare_proposal_datum_redeemer(
         self,
-        title: str,
-        description: str,
+        proposal_id: str,
         proposer_pkh: str,
         reward_amount: int = 1000
     ) -> tuple[dict[str, Any], dict[str, Any], str]:
         """
         Prepare a governance proposal datum and redeemer.
         """
-        proposal_id = generate_proposal_id()
         current_time = int(time.time() * 1000)
-        proposal_list = [proposal_id, title, description, proposer_pkh, current_time]
-        rpi_list = [reward_amount, 0, self.token_name, current_time]
 
         plutus_proposal = [
             {"bytes": str_to_hex(proposal_id)},
-            {"bytes": str_to_hex(title)},
-            {"bytes": str_to_hex(description)},
             {"bytes": proposer_pkh},
             {"int": current_time}
         ]
@@ -706,18 +677,9 @@ class DatumProcessor:
             # Extract proposal details
             proposal_details = proposal_datum[0]["fields"]
             proposal_id = proposal_details[0]["bytes"]
-            title = proposal_details[1]["bytes"]
-            description = proposal_details[2]["bytes"]
-            proposer = proposal_details[3]["bytes"]
-            timestamp = proposal_details[4]["int"]
+            proposer = proposal_details[1]["bytes"]
+            timestamp = proposal_details[2]["int"]
             status = ProposalStatus(proposal_datum[1]["constructor"])
-
-            # Extract reward pool information
-            reward_info = proposal_datum[2]["fields"]
-            total_amount = reward_info[0]["int"]
-            allocated_amount = reward_info[1]["int"]
-            token_name = reward_info[2]["bytes"]
-            creation_timestamp = reward_info[3]["int"]
 
             # Extract votes
             votes = []
@@ -730,17 +692,9 @@ class DatumProcessor:
                 votes.append(vote_record)
             result = {
                 "proposal_id": proposal_id,
-                "title": title,
-                "description": description,
                 "proposer_pkh": proposer,
                 "timestamp": timestamp,
                 "status": status,
-                "reward_pool": {
-                    "total_amount": total_amount,
-                    "allocated_amount": allocated_amount,
-                    "token_name": token_name,
-                    "creation_timestamp": creation_timestamp
-                },
                 "votes": votes
             }
 
@@ -748,9 +702,6 @@ class DatumProcessor:
 
         except Exception as e:
             logger.error(f"Failed to extract proposal data: {str(e)}")
-            # Print more detailed error information for debugging
-            import traceback
-            logger.error(traceback.format_exc())
             return {}
 
     def _decode_value(self, value:Any) -> Any:

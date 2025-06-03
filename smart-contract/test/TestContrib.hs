@@ -123,7 +123,7 @@ testContributionReviewValid :: Assertion
 testContributionReviewValid = do
     let contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
         reviewer = defaultReviewer
-        reviewContent = mkTestReviewContent reviewer contribId 5100
+        reviewContent = mkTestReviewContent reviewer 5100
         
         -- Create a contribution with matching ID
         tContribution = mkTestContribution (mkTestPubKeyHash 9) 5000
@@ -134,11 +134,11 @@ testContributionReviewValid = do
             , relevance = 0
             , accuracy = 0
             , completeness = 0
-            , revContent = mkTestReviewContent reviewer contribId 0
+            , revContent = mkTestReviewContent reviewer 0
             , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
             , timelinessScore = 10
             }
-        
+
         -- Create the review action with scores
         reviewAction = ContributionAction (ReviewContribution contribId 8 7 9 reviewContent)
         
@@ -221,7 +221,7 @@ testContributionDisputeValid = do
             , relevance = 0
             , accuracy = 0
             , completeness = 0
-            , revContent = mkTestReviewContent defaultReviewer contribId 0
+            , revContent = mkTestReviewContent defaultReviewer 0
             , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
             , timelinessScore = 10
             }
@@ -304,7 +304,7 @@ testContributionRejectValid = do
             , relevance = 0
             , accuracy = 0
             , completeness = 0
-            , revContent = mkTestReviewContent reviewer contribId 0
+            , revContent = mkTestReviewContent reviewer 0
             , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
             , timelinessScore = 10
             }
@@ -376,11 +376,7 @@ testInvalidReviewContent = do
         -- Create an invalid review content with empty accuracy reason
         invalidReviewContent = ReviewContent { 
             reviewerPkh = defaultReviewer,
-            refCntribId = contribId,
-            relevanceReason = PlutusTx.toBuiltin (BS.pack "Good relevance"),
-            accuracyReason = PlutusTx.emptyByteString, -- Invalid empty reason
-            completenessReason = PlutusTx.toBuiltin (BS.pack "Complete submission"),
-            reviewTimestamp = 5100
+            reviewTimestamp = -1
         }
         
         -- Create a contribution with matching ID
@@ -392,7 +388,7 @@ testInvalidReviewContent = do
             , relevance = 0
             , accuracy = 0
             , completeness = 0
-            , revContent = mkTestReviewContent defaultReviewer contribId 0
+            , revContent = mkTestReviewContent defaultReviewer 0
             , dispReason = mkTestDisputeReason (mkTestPubKeyHash 0) 0
             , timelinessScore = 10
             }
@@ -412,7 +408,7 @@ testInvalidReviewContent = do
             defaultScriptHash
             (Value.singleton defaultCurrencySymbol defaultTokenName 100)
             (OutputDatum (Datum (PlutusTx.toBuiltinData contribDatum)))
-            
+
         -- Output with the updated contribution status, scores, and invalid review content
         outputContribDatum = contribDatum { 
             cStatus = ContributionReviewed,
@@ -445,7 +441,7 @@ testInvalidReviewContent = do
             , txInfoCurrentTreasuryAmount = Nothing
             , txInfoTreasuryDonation = Nothing
             }
-            
+
         -- Build the script context with contribution datum
         ctx = ScriptContext
             { scriptContextTxInfo = txInfo
@@ -468,7 +464,7 @@ testInvalidTimeliness :: Assertion
 testInvalidTimeliness = do
     let contribId = PlutusTx.toBuiltin (BS.pack "contrib1")
         -- Create a valid review content
-        reviewContent = mkTestReviewContent defaultReviewer contribId 5100
+        reviewContent = mkTestReviewContent defaultReviewer 5100
         
         -- Create a contribution datum
         tContribution = mkTestContribution (mkTestPubKeyHash 9) 5000

@@ -166,8 +166,6 @@ mkDFCTValidator symbol rawData =
                                         then traceError "39" -- reviewer is not authorized
                                     else if not (validateReviewContent reviewContent txInfo)
                                         then traceError "40" -- invalid content
-                                    else if cid /= refCntribId reviewContent
-                                        then traceError "41" -- invalid content reference
                                     else if not (ensureContributionProperTransition ContributionReviewed scriptContext)
                                         then traceError "42" -- invalid transition
                                     else toOpaque ()
@@ -190,8 +188,6 @@ mkDFCTValidator symbol rawData =
                                         then traceError "48" -- reference to topic is required
                                     else if not (isTopicActive txInfo)
                                         then traceError "49" -- topic isn't in activated state
-                                    else if lengthOfByteString (disputeContent disputeReason) <= 0
-                                        then traceError "50" -- reason is required
                                     else if not (validateDisputeReason disputeReason txInfo)
                                         then traceError "51" -- invalid reason
                                     else if not (ensureContributionProperTransition ContributionDisputed scriptContext)
@@ -381,7 +377,6 @@ validateDatum d = (lengthOfByteString (topicId $ topic d) /= 0) &&
 validateTopicData :: Topic -> TxInfo -> Bool
 validateTopicData t info =
     lengthOfByteString (topicId t) > 0 &&
-    lengthOfByteString (topicTitle t) > 0 &&
     Contexts.txSignedBy info (topicProposer t)
 
 {-# INLINABLE validateRewardPool #-}
@@ -406,7 +401,6 @@ validateContributionData :: Contribution -> TxInfo -> Bool
 validateContributionData c info =
     lengthOfByteString (contributionId c) > 0 &&
     lengthOfByteString (contributionTopicId c) > 0 &&
-    lengthOfByteString (contributionContent c) > 0 &&
     Contexts.txSignedBy info (contributionCreator c)
 
 -- validate contribution timeliness
@@ -418,17 +412,13 @@ validateContributionTimeliness _ timeScore = timeScore >= 0 && timeScore <= 10
 {-# INLINABLE validateReviewContent #-}
 validateReviewContent :: ReviewContent -> TxInfo -> Bool
 validateReviewContent rc info =
-    lengthOfByteString (refCntribId rc) > 0 &&
-    lengthOfByteString (relevanceReason rc) > 0 &&
-    lengthOfByteString (accuracyReason rc) > 0 &&
-    lengthOfByteString (completenessReason rc) > 0 &&
+    (reviewTimestamp rc) > 0 &&
     Contexts.txSignedBy info (reviewerPkh rc)
 
 -- validate dispute reason
 {-# INLINABLE validateDisputeReason #-}
 validateDisputeReason :: DisputeReason -> TxInfo -> Bool
 validateDisputeReason dr info =
-    lengthOfByteString (disputeContent dr) > 0 &&
     Contexts.txSignedBy info (disputeInitiator dr)
 
 {-# INLINABLE checkReviewerAuth #-}

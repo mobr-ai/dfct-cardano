@@ -86,8 +86,6 @@ mkTestPubKeyHash n = PubKeyHash (PlutusTx.toBuiltin (BS.pack ("pk" ++ show n)))
 mkTestTopic :: PubKeyHash -> Integer -> Topic
 mkTestTopic proposer timestamp = Topic
     { topicId = PlutusTx.toBuiltin (BS.pack "topic1")
-    , topicTitle = PlutusTx.toBuiltin (BS.pack "Test Topic")
-    , topicDescription = PlutusTx.toBuiltin (BS.pack "A test topic")
     , topicProposer = proposer
     , topicTimestamp = timestamp
     }
@@ -113,7 +111,6 @@ mkTestContribution creator timestamp = Contribution
     { contributionId = PlutusTx.toBuiltin (BS.pack "contrib1")
     , contributionTopicId = PlutusTx.toBuiltin (BS.pack "topic1")
     , contributionType = Evidence
-    , contributionContent = PlutusTx.toBuiltin (BS.pack "Test evidence")
     , contributionCreator = creator
     , contributionTimestamp = timestamp
     , contributionVersion = 1
@@ -128,25 +125,20 @@ mkTestContributionDatum c = ContributionDatum
     , relevance = 0
     , accuracy = 0
     , completeness = 0
-    , revContent = ReviewContent "pub_key" "rev" "reason" "accuracy" "completeness" 0
-    , dispReason = DisputeReason "pub_key" "reason" 0
+    , revContent = ReviewContent "pub_key" 0
+    , dispReason = DisputeReason "pub_key" 0
     , timelinessScore = 0
     }
 
-mkTestReviewContent :: PubKeyHash -> BuiltinByteString -> Integer -> ReviewContent
-mkTestReviewContent reviewer contribId timestamp = ReviewContent
+mkTestReviewContent :: PubKeyHash -> Integer -> ReviewContent
+mkTestReviewContent reviewer timestamp = ReviewContent
     { reviewerPkh = reviewer
-    , refCntribId = contribId
-    , relevanceReason = PlutusTx.toBuiltin (BS.pack "Good relevance")
-    , accuracyReason = PlutusTx.toBuiltin (BS.pack "Accurate information")
-    , completenessReason = PlutusTx.toBuiltin (BS.pack "Complete submission")
     , reviewTimestamp = timestamp
     }
 
 mkTestDisputeReason :: PubKeyHash -> Integer -> DisputeReason
 mkTestDisputeReason disputer timestamp = DisputeReason
     { disputeInitiator = disputer
-    , disputeContent = PlutusTx.toBuiltin (BS.pack "Invalid data")
     , disputeTimestamp = timestamp
     }
 

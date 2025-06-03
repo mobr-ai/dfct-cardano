@@ -23,15 +23,15 @@ contract = ProvenanceContract()
 def create_utxos(wallet: CardanoWallet, utxo_values: list, dfc_reward_pool) -> bool:
     utxo_values.sort(reverse=True)
 
-    largest, largest_value = contract.transactions.find_largest_utxo(wallet)
+    largest, largest_value = contract.tx.find_largest_utxo(wallet)
     if not largest or largest_value < sum(utxo_values):
         logger.info(f"{wallet.name} needs funding from faucet")
         return False
 
-    dfc_utxo = contract.transactions.find_token_utxo(
+    dfc_utxo = contract.tx.find_token_utxo(
         wallet.address,
-        contract.transactions.policy_id,
-        contract.transactions.token_name,
+        contract.tx.policy_id,
+        contract.tx.token_name,
         1,
         dfc_reward_pool
     )
@@ -39,7 +39,7 @@ def create_utxos(wallet: CardanoWallet, utxo_values: list, dfc_reward_pool) -> b
     exclude = [dfc_utxo]
     needed = []
     for value in utxo_values:
-        utxos = contract.transactions.find_utxos_at_address(
+        utxos = contract.tx.find_utxos_at_address(
             address=wallet.address,
             min_lovelace=value,
             exclude=exclude
@@ -51,19 +51,19 @@ def create_utxos(wallet: CardanoWallet, utxo_values: list, dfc_reward_pool) -> b
             exclude.append(utxos[0])
 
     if needed:
-        utxos = contract.transactions.find_utxos_at_address(
+        utxos = contract.tx.find_utxos_at_address(
             address=wallet.address
         )
         len_utxos = len(utxos)
 
         for value in needed:
             logger.info(f"Creating utxo with {value} lovelave for {wallet.name}")
-            contract.transactions.create_utxo(wallet, largest, value)
+            contract.tx.create_utxo(wallet, largest, value)
             nr_attempts = 0
             while nr_attempts < MAX_ATTEMPTS:
                 time.sleep(WAIT_DATA_SYNC)
                 nr_attempts += 1
-                utxos = contract.transactions.find_utxos_at_address(
+                utxos = contract.tx.find_utxos_at_address(
                     address=wallet.address
                 )
                 if len_utxos < len(utxos):
@@ -72,7 +72,7 @@ def create_utxos(wallet: CardanoWallet, utxo_values: list, dfc_reward_pool) -> b
                 len_utxos = len(utxos)
 
             #updating largest utxo info (hash and index)
-            largest, largest_value = contract.transactions.find_largest_utxo(wallet)
+            largest, largest_value = contract.tx.find_largest_utxo(wallet)
 
     return True
 
@@ -109,8 +109,7 @@ def main():
     # Step 1: Submit a new topic
     logger.info("Submitting a new topic...")
     topic_result = contract.submit_topic(
-        title="Climate",
-        description="biodiversity",
+        topic_id=topic_id,
         proposer=proposer,
         lovelace_amount=FUND_SCRIPT_VALUE,
         reward_amount=DFC_REWARD_VALUE
@@ -138,7 +137,6 @@ def main():
     assert topic_data["status"] == TopicStatus.PROPOSED, f"Unexpected topic status: {topic_data['status']}"
 
     logger.info(f"Topic {topic_id} has status: {topic_data['status']}")
-    logger.info(f"Topic details: {topic_data['title']} - {topic_data['description']}")
 
     ###
     # Step 3: Review the topic (approve it)
@@ -206,7 +204,6 @@ def main():
     logger.info(f"Submitting contribution to topic {topic_id}...")
     contribution_result = contract.submit_contribution(
         topic_id=topic_id,
-        content="decline",
         contributor=contributor
     )
 
@@ -240,8 +237,7 @@ def main():
         reviewer=reviewer1,
         relevance=8,      # Score out of 10
         accuracy=7,       # Score out of 10
-        completeness=6,   # Score out of 10
-        review_content="agree"
+        completeness=6    # Score out of 10
     )
 
     # Assert review was successful
@@ -266,7 +262,6 @@ def main():
     assert contribution_after_review["relevance"] == 8, f"Relevance score not updated correctly: {contribution_after_review['relevance']}"
     assert contribution_after_review["accuracy"] == 7, f"Accuracy score not updated correctly: {contribution_after_review['accuracy']}"
     assert contribution_after_review["completeness"] == 6, f"Completeness score not updated correctly: {contribution_after_review['completeness']}"
-    assert len(contribution_after_review["review_content"]) > 0, "Review content not saved"
     logger.info(f"Contribution status after review: {contribution_after_review['status']}")
 
     ###
