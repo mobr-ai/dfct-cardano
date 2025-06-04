@@ -1,0 +1,61 @@
+version: "3.8"
+
+services:
+  cardano-node-preview:
+    image: ghcr.io/intersectmbo/cardano-node:10.4.0
+    container_name: cardano-node-preview
+    platform: linux/amd64
+    volumes:
+      - ./cardano/preview-config:/config
+      - ./backend/assets:/assets
+      - ./cardano/db:/data
+    ports:
+      - "3001:3001"
+    command: >
+      run
+      --config /config/config.json
+      --topology /config/topology.json
+      --database-path /data
+      --socket-path /data/node.socket
+      --host-addr 0.0.0.0
+      --port 3001
+
+  ogmios:
+    image: cardanosolutions/ogmios:latest
+    container_name: ogmios
+    platform: linux/amd64
+    depends_on:
+      - cardano-node-preview
+    volumes:
+      - ./cardano/preview-config:/config
+      - ./cardano/db:/data
+      - ./ipc:/ipc
+    ports:
+      - "1337:1337"
+    command: >
+      --node-config /config/config.json
+      --node-socket /data/node.socket
+      --host 0.0.0.0
+
+  dfct-prov-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dfct-prov-backend
+    depends_on:
+      - cardano-node-preview
+      - ogmios
+    environment:
+      - DOCKER_ASSETS_DIR=/assets
+      - VALIDATOR_ADDRESS=replace_this
+      - POLICY_ID=replace_this
+      - TOKEN_NAME=DFC
+      - DATABASE_URL=replace_this
+    volumes:
+      - ./backend:/app
+      - ./backend/assets:/assets
+    ports:
+      - "8000:8000"
+    command: >
+      uvicorn dfctbackend.main:app --host 0.0.0.0 --port 8000 --reload
+
