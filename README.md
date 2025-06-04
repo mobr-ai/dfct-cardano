@@ -485,6 +485,62 @@ poetry run python integration_test_provenance.py
 poetry run python integration_test_governance.py
 ```
 
+## Running with Docker Compose
+
+It is also possible to launch a full test environment with a docker-based setup using `docker-compose`. This includes:
+
+* Cardano preview node
+* Ogmios (for chain indexing and querying)
+* Python FastAPI provenance backend
+
+### Prerequisites
+
+* [Docker](https://www.docker.com/)
+* [Docker Compose](https://docs.docker.com/compose/)
+* Required config files: `config.json`, `topology.json` in `cardano/preview-config`
+  *(fetch with `./fetch_config_files.sh` if not already present)*
+
+### Directory Structure Required
+
+Ensure the following folders exist before running:
+
+```bash
+mkdir -p backend/assets cardano/preview-config cardano/db ipc
+```
+
+Also, populate `cardano/preview-config` using:
+
+```bash
+./fetch_config_files.sh
+```
+
+### Launch Services
+
+```bash
+docker-compose up --build
+```
+
+This will:
+
+* Run the Cardano node on `localhost:3001`
+* Start Ogmios on `localhost:1337`
+* Launch the DFCT backend on `localhost:8000`
+
+### Rebuilding
+
+If you make changes to the backend code or configuration:
+
+```bash
+docker-compose up --build --force-recreate
+```
+
+### Stopping and Cleaning Up
+
+```bash
+docker-compose down
+```
+
+This will stop and remove all services but leave volumes intact.
 
 ## Project Structure
 
