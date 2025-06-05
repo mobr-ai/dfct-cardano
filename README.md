@@ -261,6 +261,8 @@ mv dfct-provenance.plutus ../backend/assets
 docker exec -it cardano-node-preview cardano-cli address build --payment-script-file /assets/dfct-provenance.plutus --testnet-magic 2 --out-file /assets/dfct-provenance.addr
 ```
 
+**ATTENTION**: Update the dfcSymbol of app/governance/CompileGV.hs with the dfct-minting-policy.id value
+
 ```bash
 #build the governance validator smart contract
 cabal run dfct-governance

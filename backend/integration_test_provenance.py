@@ -3,7 +3,7 @@ import time
 import uuid
 
 from dfctbackend.cardano.wallet import CardanoWallet, local_wallets
-from dfctbackend.cardano.provenance_contract import (
+from dfctbackend.cardano.contract.provenance.provenance_contract import (
     ProvenanceContract, ContractError, TopicStatus,
     ContributionStatus, ContributionType
 )

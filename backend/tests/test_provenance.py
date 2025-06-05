@@ -4,8 +4,8 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from pycardano import Address, ScriptHash
 from dfctbackend.cardano.wallet import CardanoWallet
-from dfctbackend.cardano.datum import DatumProcessor, TopicStatus, ContributionStatus, ContributionType
-from dfctbackend.cardano.provenance_contract import ProvenanceContract
+from dfctbackend.cardano.contract.provenance.provenance_datum import ProvenanceDatumProcessor, TopicStatus, ContributionStatus, ContributionType
+from dfctbackend.cardano.contract.provenance.provenance_contract import ProvenanceContract
 from dfctbackend.cardano.transaction import CardanoTransaction
 from dfctbackend.cardano.utils import str_to_hex
 from dfctbackend.config import settings
@@ -74,7 +74,7 @@ class TestDatumProcessor:
 
     def test_prepare_topic_datum(self):
         """Test preparing topic datum and redeemer."""
-        dp = DatumProcessor()
+        dp = ProvenanceDatumProcessor()
         datum, redeemer = dp.prepare_topic_datum_redeemer(
             topic_id="t12345678",
             proposer_pkh="mock_pub_key_hash"
@@ -86,7 +86,7 @@ class TestDatumProcessor:
 
     def test_prepare_contribution_datum(self):
         """Test preparing contribution datum and redeemer."""
-        dp = DatumProcessor()
+        dp = ProvenanceDatumProcessor()
         contribution_id = "c12345678"
         datum, redeemer = dp.prepare_contribution_datum_redeemer(
             contribution_id=contribution_id,
@@ -101,7 +101,7 @@ class TestDatumProcessor:
 
     def test_prepare_review_topic_redeemer(self):
         """Test preparing review topic redeemer."""
-        dp = DatumProcessor()
+        dp = ProvenanceDatumProcessor()
         redeemer = dp.prepare_review_topic_redeemer(topic_id="t12345678", approved=True)
         assert redeemer["constructor"] == 0
         assert redeemer["fields"][0]["constructor"] == 1
@@ -109,33 +109,34 @@ class TestDatumProcessor:
 
     def test_prepare_review_contribution_redeemer(self):
         """Test preparing review contribution redeemer."""
-        dp = DatumProcessor()
+        dp = ProvenanceDatumProcessor()
+        score = 5
         redeemer = dp.prepare_review_contribution_redeemer(
             contribution_id="c12345678",
             reviewer_pkh="mock_pub_key_hash",
-            relevance=5,
-            accuracy=5,
-            completeness=5
+            relevance=score,
+            accuracy=score,
+            completeness=score
         )
         assert redeemer["constructor"] == 1
-        assert redeemer["fields"][0]["constructor"] == 3
-        assert redeemer["fields"][0]["fields"][1]["int"] == 5
+        assert redeemer["fields"][0]["constructor"] == 1
+        assert redeemer["fields"][0]["fields"][1]["int"] == score
 
     def test_prepare_dispute_contribution_redeemer(self):
         """Test preparing dispute contribution redeemer."""
-        dp = DatumProcessor()
+        dp = ProvenanceDatumProcessor()
         contribution_id="c12345678"
         redeemer = dp.prepare_dispute_contribution_redeemer(
             contribution_id=contribution_id,
             contributor_pkh="mock_pub_key_hash"
         )
         assert redeemer["constructor"] == 1
-        assert redeemer["fields"][0]["constructor"] == 5
+        assert redeemer["fields"][0]["constructor"] == 3
         assert redeemer["fields"][0]["fields"][0]["bytes"] == str_to_hex(contribution_id)
 
     def test_extract_topic_from_datum(self):
         """Test extracting topic from datum."""
-        dp = DatumProcessor()
+        dp = ProvenanceDatumProcessor()
         mock_datum = [
             ["t12345678", "mock_pkh", 1234567890],
             TopicStatus.PROPOSED.value,
@@ -200,7 +201,7 @@ class TestAPIRouter:
         contract_mock.validator_address = Address.decode(
             "addr_test1wzw3dv98lkulug8gh26exeh67qf44lkjtj7eejfrh0skpycfv9hqk"
         )
-        contract_mock.dp = DatumProcessor()
+        contract_mock.dp = ProvenanceDatumProcessor()
 
         with patch("dfctbackend.api.router.provenance_contract", contract_mock):
             yield contract_mock

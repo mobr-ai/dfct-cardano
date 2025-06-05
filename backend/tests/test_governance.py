@@ -1,11 +1,11 @@
 import pytest
-import time
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from pycardano import Address, ScriptHash
 from dfctbackend.cardano.wallet import CardanoWallet
-from dfctbackend.cardano.datum import DatumProcessor, ProposalStatus
-from dfctbackend.cardano.governance_contract import GovernanceContract
+from dfctbackend.cardano.contract.datum import DatumProcessor
+from dfctbackend.cardano.contract.governance.governance_datum import ProposalStatus
+from dfctbackend.cardano.contract.governance.governance_contract import GovernanceContract
 from dfctbackend.cardano.transaction import CardanoTransaction
 from dfctbackend.cardano.utils import str_to_hex
 from dfctbackend.config import settings
@@ -90,8 +90,7 @@ class TestGovernanceContract:
         result = contract.submit_proposal(
             proposal_id="p12345678",
             proposer=wallet,
-            lovelace_amount=70000000,
-            reward_amount=1000
+            lovelace_amount=70000000
         )
         assert result is not None
         assert result["proposal_id"] == "p12345678"
@@ -103,7 +102,7 @@ class TestGovernanceContract:
         mock_utxo = MagicMock()
         mock_utxo.output.amount.coin = 70000000
         mock_utxo.output.amount.multi_asset = {ScriptHash(bytes.fromhex("ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa")): {"DFC": 1000}}
-        contract.get_contract_utxo_and_datum.return_value = (mock_utxo, [
+        contract._get_contract_utxo_and_datum.return_value = (mock_utxo, [
             ["p12345678", "mock_pkh", 1000],
             ProposalStatus.VOTING.value,
             {"yes_votes": {}, "no_votes": {}},
@@ -136,7 +135,7 @@ class TestGovernanceContract:
         mock_utxo = MagicMock()
         mock_utxo.output.amount.coin = 70000000
         mock_utxo.output.amount.multi_asset = {ScriptHash(bytes.fromhex("ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa")): {"DFC": 1000}}
-        contract.get_contract_utxo_and_datum.return_value = (mock_utxo, [
+        contract._get_contract_utxo_and_datum.return_value = (mock_utxo, [
             ["p12345678", "mock_pkh", 1000],
             ProposalStatus.VOTING.value,
             {"yes_votes": {"mock_pkh": 500}, "no_votes": {}},
@@ -171,7 +170,7 @@ class TestGovernanceContract:
             {"yes_votes": {"mock_pkh": 500}, "no_votes": {}},
             1234567890
         ]
-        contract.get_contract_utxo_and_datum.return_value = (MagicMock(), mock_datum)
+        contract._get_contract_utxo_and_datum.return_value = (MagicMock(), mock_datum)
         contract.get_proposal.return_value = {
             "proposal_id": "p12345678",
             "status": ProposalStatus.VOTING

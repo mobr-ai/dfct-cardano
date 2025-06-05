@@ -22,8 +22,6 @@ import TestFixtures
 defaultGovernanceParams :: DFCTGovernanceParams
 defaultGovernanceParams = DFCTGovernanceParams
   { gpOwner = defaultAuth
-  , gpTokenSymbol = defaultCurrencySymbol
-  , gpTokenName = defaultTokenName
   , gpMinVotingTokens = 50
   , gpAuthorizedPKHs = AssocMap.safeFromList [(defaultReviewer, 1)]
   }
@@ -35,7 +33,7 @@ defaultProposal = DFCTProposal
   , votingStart = 1000
   , votingEnd = 2000
   , voteTally = AssocMap.empty
-  , proposalOutcome = Nothing
+  , proposalOutcome = 2
   }
 
 mkTestGovernanceDatum :: DFCTProposalStatus -> Maybe DFCTProposal -> DFCTGovernanceParams -> DFCTGovernanceDatum
@@ -73,7 +71,7 @@ testProposalSubmissionOwner = do
             (Just (Datum (PlutusTx.toBuiltinData datum)))
         }
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Owner proposal submission should succeed" result
 
@@ -105,7 +103,7 @@ testProposalSubmissionAuthorized = do
             (Just (Datum (PlutusTx.toBuiltinData datum)))
         }
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Authorized PKH proposal submission should succeed" result
 
@@ -131,7 +129,7 @@ testProposalSubmissionInvalidId = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Invalid proposal ID should fail" result
 
@@ -158,7 +156,7 @@ testProposalSubmissionUnauthorized = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Unauthorized proposal submission should fail" result
 
@@ -196,7 +194,7 @@ testVoteValid = do
             (Just (Datum (PlutusTx.toBuiltinData datum)))
         }
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Valid vote should succeed" result
 
@@ -227,7 +225,7 @@ testVoteInsufficientTokens = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Vote with insufficient tokens should fail" result
 
@@ -258,7 +256,7 @@ testVoteDuplicate = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Duplicate vote should fail" result
 
@@ -289,7 +287,7 @@ testVoteOutsidePeriod = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Vote outside period should fail" result
 
@@ -323,7 +321,7 @@ testUpdateAuthorizedPKHsValid = do
             (Just (Datum (PlutusTx.toBuiltinData datum)))
         }
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Valid authorized PKHs update should succeed" result
 
@@ -350,7 +348,7 @@ testUpdateAuthorizedPKHsNonOwner = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Non-owner authorized PKHs update should fail" result
 
@@ -377,7 +375,7 @@ testUpdateMinVotingTokensValid = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Valid min voting tokens update should succeed" result
 
@@ -404,7 +402,7 @@ testUpdateMinVotingTokensInvalid = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Invalid min voting tokens should fail" result
 
@@ -435,7 +433,7 @@ testSetVotingPeriodValid = do
         , scriptContextScriptInfo = Contexts.SpendingScript (TxOutRef defaultTxId 0) (Just (Datum (PlutusTx.toBuiltinData datum)))
         }
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Valid voting period set should succeed" result
 
@@ -449,7 +447,7 @@ testFinalizeProposalApproved = do
         defaultScriptHash
         (Value.singleton defaultCurrencySymbol defaultTokenName 100)
         (OutputDatum (Datum (PlutusTx.toBuiltinData datum)))
-      outputProposal = dfctProposal { proposalOutcome = Just 1 }
+      outputProposal = dfctProposal { proposalOutcome = 1 }
       outputDatum = mkTestGovernanceDatum Approved (Just outputProposal) params
       outputTxOut = mkTestTxOut
         defaultScriptHash
@@ -461,15 +459,16 @@ testFinalizeProposalApproved = do
         [outputTxOut]
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
-      ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+      ctx' = ctx { scriptContextTxInfo = (scriptContextTxInfo ctx) { txInfoValidRange = Interval.interval 1001 2000 } }
+      ctxData = PlutusTx.toBuiltinData ctx'
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Finalize as approved should succeed" result
 
 testExecuteProposalValid :: Assertion
 testExecuteProposalValid = do
   let params = defaultGovernanceParams
-      dfctProposal = defaultProposal { proposalOutcome = Just 1 }
+      dfctProposal = defaultProposal { proposalOutcome = 1 }
       datum = mkTestGovernanceDatum Approved (Just dfctProposal) params
       action = ExecuteProposal (proposalId defaultProposal)
       inputTxOut = mkTestTxOut
@@ -488,7 +487,7 @@ testExecuteProposalValid = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return True)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return True)
     `catch` \(_ :: SomeException) -> return False
   assertBool "Execute approved proposal should succeed" result
 
@@ -513,7 +512,7 @@ testInvalidStateTransition = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Invalid state transition should fail" result
 
@@ -547,7 +546,7 @@ testEmptyAuthorizedPKHs = do
             (Just (Datum (PlutusTx.toBuiltinData datum)))
         }
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Empty authorized PKHs should fail" result
 
@@ -573,7 +572,7 @@ testInvalidProposalDatum = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Invalid proposal datum should fail" result
 
@@ -604,6 +603,6 @@ testInvalidVoteValue = do
         mkEmptyMintValue
         (Redeemer $ PlutusTx.toBuiltinData action)
       ctxData = PlutusTx.toBuiltinData ctx
-  result <- (evaluate (mkGovernanceValidator ctxData) >> return False)
+  result <- (evaluate (mkGovernanceValidator defaultCurrencySymbol ctxData) >> return False)
     `catch` \(_ :: SomeException) -> return True
   assertBool "Invalid vote value should fail" result

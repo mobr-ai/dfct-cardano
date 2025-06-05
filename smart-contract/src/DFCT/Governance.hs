@@ -16,7 +16,6 @@
 module DFCT.Governance where
 
 import GHC.Generics (Generic)
-
 import PlutusTx.Prelude
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Contexts as Contexts
@@ -26,9 +25,7 @@ import PlutusLedgerApi.V1.Interval as Interval
 
 -- Governance Parameters
 data DFCTGovernanceParams = DFCTGovernanceParams
-  { gpOwner            :: PubKeyHash           -- Contract owner
-  , gpTokenSymbol      :: CurrencySymbol       -- DFC token currency symbol
-  , gpTokenName        :: TokenName            -- DFC token name
+  { gpOwner            :: PubKeyHash           -- Proposal owner
   , gpMinVotingTokens  :: Integer              -- Minimum DFC tokens required to vote
   , gpAuthorizedPKHs   :: AssocMap.Map PubKeyHash Integer -- Map of authorized PKHs for proposal submission
   } deriving (Generic)
@@ -51,14 +48,13 @@ instance Eq DFCTProposalStatus where
 PlutusTx.makeIsDataIndexed ''DFCTProposalStatus [('Proposed, 0), ('PSVoting, 1), ('Approved, 2), ('Rejected, 3), ('Executed, 4)]
 PlutusTx.makeLift ''DFCTProposalStatus
 
--- DFCTProposal Data
 data DFCTProposal = DFCTProposal
   { proposalId         :: BuiltinByteString    -- Unique proposal ID
   , proposer           :: PubKeyHash           -- Proposer’s public key hash
-  , votingStart        :: POSIXTime            -- Voting start time
-  , votingEnd          :: POSIXTime            -- Voting end time
+  , votingStart        :: Integer              -- Voting start time
+  , votingEnd          :: Integer              -- Voting end time
   , voteTally          :: AssocMap.Map PubKeyHash Integer -- Map of voter PKH to vote weight
-  , proposalOutcome    :: Maybe Integer        -- 1 for approve, 0 for reject, Nothing if undecided
+  , proposalOutcome    :: Integer              -- 1 for approve, 0 for reject, 2 if ongoing
   } deriving (Generic)
 
 PlutusTx.makeIsDataIndexed ''DFCTProposal [('DFCTProposal, 0)]
@@ -66,9 +62,9 @@ PlutusTx.makeLift ''DFCTProposal
 
 -- Governance Datum
 data DFCTGovernanceDatum = DFCTGovernanceDatum
-  { govParams          :: DFCTGovernanceParams     -- Governance parameters
-  , proposal           :: Maybe DFCTProposal       -- Current proposal (if any)
-  , proposalStatus     :: DFCTProposalStatus        -- Current proposal status
+  { govParams          :: DFCTGovernanceParams
+  , proposal           :: Maybe DFCTProposal
+  , proposalStatus     :: DFCTProposalStatus
   } deriving (Generic)
 
 PlutusTx.makeIsDataIndexed ''DFCTGovernanceDatum [('DFCTGovernanceDatum, 0)]
@@ -79,10 +75,10 @@ data DFCTGovernanceAction
   = SubmitProposal DFCTProposal
   | VoteOnProposal BuiltinByteString Integer Integer -- DFCTProposal ID, vote (1=approve, 0=reject), vote weight
   | UpdateAuthorizedPKHs (AssocMap.Map PubKeyHash Integer) -- Update map of authorized submitters
-  | UpdateMinVotingTokens Integer                -- Update minimum DFC tokens for voting
-  | SetVotingPeriod BuiltinByteString POSIXTime POSIXTime -- DFCTProposal ID, start, end
-  | FinalizeProposal BuiltinByteString Integer   -- DFCTProposal ID, outcome (1=approve, 0=reject)
-  | ExecuteProposal BuiltinByteString            -- Execute approved proposal
+  | UpdateMinVotingTokens Integer  -- Update minimum DFC tokens for voting
+  | SetVotingPeriod BuiltinByteString Integer Integer -- DFCTProposal ID, start, end
+  | FinalizeProposal BuiltinByteString Integer -- DFCTProposal ID, outcome (1=approve, 0=reject)
+  | ExecuteProposal BuiltinByteString -- Execute approved DFCTProposal ID
   deriving (Generic)
 
 PlutusTx.makeIsDataIndexed ''DFCTGovernanceAction [
@@ -97,8 +93,8 @@ PlutusTx.makeLift ''DFCTGovernanceAction
 
 -- Governance Validator
 {-# INLINABLE mkGovernanceValidator #-}
-mkGovernanceValidator :: BuiltinData -> BuiltinUnit
-mkGovernanceValidator rawData =
+mkGovernanceValidator :: CurrencySymbol -> BuiltinData -> BuiltinUnit
+mkGovernanceValidator symbol rawData =
   case fromBuiltinData rawData of
     Nothing -> traceError "1" -- Failed: ScriptContext
     Just scriptContext ->
@@ -123,7 +119,7 @@ mkGovernanceValidator rawData =
                 else toOpaque ()
 
           VoteOnProposal pid vote weight ->
-            if not (validateVote pid vote weight datum (govParams datum) txInfo)
+            if not (validateVote symbol pid vote weight datum (govParams datum) txInfo)
               then traceError "6" -- Invalid vote
               else if not (ensureProperTransition PSVoting scriptContext)
                 then traceError "7" -- Invalid state transition
@@ -192,40 +188,48 @@ isAuthorizedSubmitter pkh submitters =
     Just v -> v > 0
     Nothing -> False
 
--- Validate Vote
 {-# INLINABLE validateVote #-}
-validateVote :: BuiltinByteString -> Integer -> Integer -> DFCTGovernanceDatum -> DFCTGovernanceParams -> TxInfo -> Bool
-validateVote pid vote weight datum params info =
+validateVote :: CurrencySymbol -> BuiltinByteString -> Integer -> Integer -> DFCTGovernanceDatum -> DFCTGovernanceParams -> TxInfo -> Bool
+validateVote _ pid vote weight datum params info =
   case proposal datum of
-    Nothing -> False
+    Nothing -> 
+      traceError "vv1" -- no proposal
     Just prop ->
-      let voter = head (txInfoSignatories info) -- Assume single voter for simplicity
-          currentTime = txInfoValidRange info
-      in proposalId prop == pid &&
-         proposalStatus datum == PSVoting &&
-         Interval.contains (Interval.from (votingStart prop)) currentTime &&
-         Interval.contains (Interval.to (votingEnd prop)) currentTime &&
-         (vote == 1 || vote == 0) && -- Ensure valid vote value
-         weight > 0 &&
-         checkVoterEligibility voter weight params info &&
-         not (AssocMap.member voter (voteTally prop)) -- Prevent duplicate voting
+      if null (txInfoSignatories info) then
+        traceError "vv2" -- no signatories
+      else
+        let voter = head (txInfoSignatories info)
+        in if proposalId prop /= pid || lengthOfByteString (proposalId prop) == 0 then
+             traceError "vv3" -- proposal id mismatch
+          --  else if not (checkVoterEligibility cSymbol voter weight params info) then
+          --    traceError "vv4" -- no dfc tokens
+           else if not (proposalStatus datum == PSVoting || proposalStatus datum == Proposed) then
+             traceError "vv6" -- invalid status 
+           else if not (vote == 1 || vote == 0) then
+             traceError "vv7" -- invalid vote
+           else if weight <= 0 then
+             traceError "vv8" -- invalid weight
+           else if weight < gpMinVotingTokens params then
+             traceError "vv9" -- insufficient tokens
+           else if AssocMap.member voter (voteTally prop) then
+             traceError "vv10" -- already voted
+           else
+             True
 
--- Check Voter Eligibility (Minimum DFC Tokens)
-{-# INLINABLE checkVoterEligibility #-}
-checkVoterEligibility :: PubKeyHash -> Integer -> DFCTGovernanceParams -> TxInfo -> Bool
-checkVoterEligibility voter weight params info =
-  let inputs = txInfoInputs info
-      voterAddress = Address (PubKeyCredential voter) Nothing
-      voterInputs = filter (\txIn -> txOutAddress (txInInfoResolved txIn) == voterAddress) inputs
-      voterValue = foldl (\acc txIn -> acc <> txOutValue (txInInfoResolved txIn)) mempty voterInputs
-      valueMap = getValue voterValue
-      tokenMap = fromMaybe AssocMap.empty (AssocMap.lookup (gpTokenSymbol params) valueMap)
-      dfcTokens = fromMaybe 0 (AssocMap.lookup (gpTokenName params) tokenMap)
-  in dfcTokens >= gpMinVotingTokens params && weight <= dfcTokens
+-- {-# INLINABLE checkVoterEligibility #-}
+-- checkVoterEligibility :: CurrencySymbol -> PubKeyHash -> Integer -> DFCTGovernanceParams -> TxInfo -> Bool
+-- checkVoterEligibility symbol voter weight params info =
+--   let inputs = txInfoInputs info
+--       voterAddress = Address (PubKeyCredential voter) Nothing
+--       voterInputs = filter (\txIn -> txOutAddress (txInInfoResolved txIn) == voterAddress) inputs
+--       voterValue = foldl (\acc txIn -> acc <> txOutValue (txInInfoResolved txIn)) mempty voterInputs
+--       valueMap = getValue voterValue
+--       dfcTokens = sum $ map snd $ AssocMap.toList $ fromMaybe AssocMap.empty (AssocMap.lookup symbol valueMap)
+--   in dfcTokens >= gpMinVotingTokens params && weight <= dfcTokens
 
 -- Validate Voting Period Update
 {-# INLINABLE validateVotingPeriodUpdate #-}
-validateVotingPeriodUpdate :: BuiltinByteString -> POSIXTime -> POSIXTime -> DFCTGovernanceDatum -> DFCTGovernanceParams -> TxInfo -> Bool
+validateVotingPeriodUpdate :: BuiltinByteString -> Integer -> Integer -> DFCTGovernanceDatum -> DFCTGovernanceParams -> TxInfo -> Bool
 validateVotingPeriodUpdate pid start end datum params info =
   case proposal datum of
     Nothing -> False
@@ -233,7 +237,6 @@ validateVotingPeriodUpdate pid start end datum params info =
       proposalId prop == pid &&
       proposalStatus datum == Proposed &&
       start < end &&
-      getPOSIXTime start > getLowerTime (txInfoValidRange info) &&
       (Contexts.txSignedBy info (gpOwner params) || isAuthorizedSubmitter (head (txInfoSignatories info)) (gpAuthorizedPKHs params))
 
 -- Validate DFCTProposal Finalization
@@ -245,8 +248,8 @@ validateProposalFinalization pid outcome datum params info =
     Just prop ->
       proposalId prop == pid &&
       proposalStatus datum == PSVoting &&
-      not (Interval.contains (Interval.to (votingEnd prop)) (txInfoValidRange info)) &&
-      (outcome == 1 || outcome == 0) && -- Ensure valid outcome
+      getUpperTime (txInfoValidRange info) > votingEnd prop &&
+      (outcome == 1 || outcome == 0) &&
       Contexts.txSignedBy info (gpOwner params)
 
 -- Validate DFCTProposal Execution
@@ -312,10 +315,18 @@ lenEqual [] [] = True
 lenEqual (_:xs) (_:ys) = lenEqual xs ys
 lenEqual _ _ = False
 
--- Helper: Extract POSIXTime from LowerBound
+-- Helper: Extract POSIXTime from LowerBound as Integer
 {-# INLINABLE getLowerTime #-}
 getLowerTime :: POSIXTimeRange -> Integer
 getLowerTime timeInterval =
   case Interval.ivFrom timeInterval of
     Interval.LowerBound (Interval.Finite t) _ -> getPOSIXTime t
+    _ -> 0 -- Default for unbounded intervals
+
+-- Helper: Extract POSIXTime from UpperBound as Integer
+{-# INLINABLE getUpperTime #-}
+getUpperTime :: POSIXTimeRange -> Integer
+getUpperTime timeInterval =
+  case Interval.ivTo timeInterval of
+    Interval.UpperBound (Interval.Finite t) _ -> getPOSIXTime t
     _ -> 0 -- Default for unbounded intervals

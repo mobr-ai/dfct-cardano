@@ -14,9 +14,13 @@ import Prelude (IO, putStrLn, show)
 
 import DFCT.Governance
 
+-- replace with policy id
+dfcSymbol :: CurrencySymbol
+dfcSymbol = CurrencySymbol "ba620a995810f982de2a8994901335bda7fa041eeec1ae32dc57edfa"
+
 {-# INLINABLE mkWrappedGV #-}
 mkWrappedGV :: BuiltinData -> BuiltinUnit
-mkWrappedGV ctx = mkGovernanceValidator ctx
+mkWrappedGV ctx = mkGovernanceValidator dfcSymbol ctx
 
 gValidator :: CompiledCode (BuiltinData -> BuiltinUnit)
 gValidator = $$(PlutusTx.compile [|| mkWrappedGV ||])
