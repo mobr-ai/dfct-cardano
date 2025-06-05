@@ -1,7 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
-from dfctbackend.cardano.datum import ContributionType
+from dfctbackend.cardano.contract.provenance.provenance_datum import ContributionType
 
 class WalletInfo(BaseModel):
     """Model for wallet information."""

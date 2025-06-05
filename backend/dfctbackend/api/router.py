@@ -8,8 +8,8 @@ from dfctbackend.models import (
     ProposalSubmitRequest, VoteRequest, FinalizeProposalRequest,
     TransactionResponse
 )
-from dfctbackend.cardano.provenance_contract import ProvenanceContract
-from dfctbackend.cardano.governance_contract import GovernanceContract
+from dfctbackend.cardano.contract.provenance.provenance_contract import ProvenanceContract
+from dfctbackend.cardano.contract.governance.governance_contract import GovernanceContract
 from dfctbackend.cardano.transaction import TransactionError
 from dfctbackend.cardano.wallet import local_wallets, CardanoWallet
 

@@ -1,12 +1,14 @@
 import time
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 import logging
 
 from dfctbackend.config import settings
-from dfctbackend.cardano.datum import TopicStatus, ContributionStatus, ContributionType
+from dfctbackend.cardano.contract.provenance.provenance_datum import (
+    ProvenanceDatumProcessor, TopicStatus, ContributionStatus, ContributionType
+)
 from dfctbackend.cardano.wallet import CardanoWallet
+from dfctbackend.cardano.contract.contract import Contract, ContractError
 from dfctbackend.cardano.utils import write_temp_json
-from dfctbackend.cardano.contract import Contract, ContractError
 from dfctbackend.cardano.transaction import MAX_ATTEMPTS, WAIT_DATA_SYNC
 
 logger = logging.getLogger(__name__)
@@ -16,48 +18,7 @@ class ProvenanceContract(Contract):
     
     def __init__(self):
         super().__init__(settings.PROVENANCE_ADDRESS)
-
-    def _write_temp_files(self, datum: Any, redeemer: Any, file_prefix: str, id_str: str) -> Tuple[str, str]:
-        """Write datum and redeemer to temporary JSON files."""
-        datum_file = f"{file_prefix}-datum-{id_str}.json"
-        redeemer_file = f"{file_prefix}-redeemer-{id_str}.json"
-        write_temp_json(datum, datum_file, self.tx.assets_path)
-        write_temp_json(redeemer, redeemer_file, self.tx.assets_path)
-        return datum_file, redeemer_file
-
-    def _prepare_topic_output(self, topic_utxo: Any, validator_addr_str: str) -> str:
-        """Prepare transaction output for topic UTxO."""
-        reward_amount = self.tx.get_cnt_amount(topic_utxo, self.policy_id)
-        token_output = f'{reward_amount} {self.policy_id}.{self.token_name_hex}'
-        topic_lovelace = topic_utxo.output.amount.coin
-        return f"{validator_addr_str}+{topic_lovelace}+\"{token_output}\""
-
-    def _add_change_output(self, build_cmd: list[str], wallet_addr: str, input_utxos: list, output_value: int, token_amount: int) -> list[str]:
-        """Add a change output to conserve remaining assets."""
-        total_input_lovelace = sum(int(utxo.output.amount.coin) for utxo in input_utxos)
-        total_input_tokens = sum(self.tx.get_cnt_amount(utxo, self.policy_id) for utxo in input_utxos)
-        output_lovelace = output_value
-        output_tokens = token_amount
-        change_lovelace = total_input_lovelace - output_lovelace - 2000000  # Subtract estimated fee
-        change_tokens = total_input_tokens - output_tokens
-        if change_lovelace > 0:
-            if change_tokens > 0:
-                build_cmd += ["--tx-out", f"{wallet_addr}+{change_lovelace}+\"{change_tokens} {self.policy_id}.{self.token_name_hex}\""]
-            else:
-                build_cmd += ["--tx-out", f"{wallet_addr}+{change_lovelace}"]
-        return build_cmd
-
-    def get_contract_utxo_and_datum(self, id_str: str) -> tuple[Any, Any]:
-        """Get UTxO and datum for a given ID, with chain sync."""
-        attempt = 0
-        while attempt < MAX_ATTEMPTS:
-            utxos = self.tx.find_utxos_at_address(self.validator_address)
-            utxo, datum = self.dp.find_utxo_with_datum_id(utxos, id_str)
-            if utxo:
-                return utxo, datum
-            time.sleep(WAIT_DATA_SYNC)
-            attempt += 1
-        return None, None
+        self.dp:ProvenanceDatumProcessor = ProvenanceDatumProcessor()
 
     def submit_topic(self, topic_id: str, proposer: CardanoWallet, lovelace_amount: int, reward_amount: int = 1000) -> dict[str, str]:
         """
@@ -105,14 +66,14 @@ class ProvenanceContract(Contract):
             self.tx.build_and_submit_tx(build_cmd, proposer, out_file, f"send-dfc-new-topic-to-provenance")
 
             # Step 2: Consume the UTxO to submit the topic
-            topic_utxo, _ = self.get_contract_utxo_and_datum(topic_id)
+            topic_utxo, _ = self._get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"No UTxO found for id {topic_id}")
 
             txin_fee, txin_collateral = self.tx.prepare_tx_inputs(proposer, [topic_utxo])
             txin_with_tokens = self.tx.create_tx_in(topic_utxo)
             _, invalid_before, invalid_hereafter = self.tx.get_current_slot_and_validity()
-            tx_out_submit = self._prepare_topic_output(topic_utxo, validator_addr_str)
+            tx_out_submit = self._prepare_validator_output(topic_utxo, validator_addr_str)
 
             build_submit_cmd = [
                 "--change-address", proposer_addr_str,
@@ -144,7 +105,7 @@ class ProvenanceContract(Contract):
 
     def get_topic(self, topic_id: str) -> Optional[dict[str, Any]]:
         try:
-            _, datum = self.get_contract_utxo_and_datum(topic_id)
+            _, datum = self._get_contract_utxo_and_datum(topic_id)
             if datum:
                 return self.dp.extract_topic_from_datum(datum)
             return None
@@ -172,7 +133,7 @@ class ProvenanceContract(Contract):
         Review a proposed topic on the blockchain.
         """
         try:
-            topic_utxo, datum = self.get_contract_utxo_and_datum(topic_id)
+            topic_utxo, datum = self._get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"Utxos for topic_id {topic_id} not found")
 
@@ -195,7 +156,7 @@ class ProvenanceContract(Contract):
 
             validator_addr_str = str(self.validator_address)
             reviewer_addr_str = str(reviewer.address)
-            tx_out = self._prepare_topic_output(topic_utxo, validator_addr_str)
+            tx_out = self._prepare_validator_output(topic_utxo, validator_addr_str)
 
             build_cmd = [
                 "--change-address", reviewer_addr_str,
@@ -232,7 +193,7 @@ class ProvenanceContract(Contract):
         Activate a reviewed topic on the blockchain.
         """
         try:
-            topic_utxo, datum = self.get_contract_utxo_and_datum(topic_id)
+            topic_utxo, datum = self._get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"Topic with ID {topic_id} not found")
 
@@ -255,7 +216,7 @@ class ProvenanceContract(Contract):
 
             validator_addr_str = str(self.validator_address)
             wallet_addr_str = str(wallet.address)
-            tx_out = self._prepare_topic_output(topic_utxo, validator_addr_str)
+            tx_out = self._prepare_validator_output(topic_utxo, validator_addr_str)
 
             build_cmd = [
                 "--change-address", wallet_addr_str,
@@ -291,7 +252,7 @@ class ProvenanceContract(Contract):
         Close an activated topic on the blockchain.
         """
         try:
-            topic_utxo, datum = self.get_contract_utxo_and_datum(topic_id)
+            topic_utxo, datum = self._get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"Topic with ID {topic_id} not found")
 
@@ -314,7 +275,7 @@ class ProvenanceContract(Contract):
 
             validator_addr_str = str(self.validator_address)
             wallet_addr_str = str(wallet.address)
-            tx_out = self._prepare_topic_output(topic_utxo, validator_addr_str)
+            tx_out = self._prepare_validator_output(topic_utxo, validator_addr_str)
 
             build_cmd = [
                 "--change-address", wallet_addr_str,
@@ -350,7 +311,7 @@ class ProvenanceContract(Contract):
         Retrieve a contribution by its ID.
         """
         try:
-            contribution_utxo, datum = self.get_contract_utxo_and_datum(contribution_id)
+            contribution_utxo, datum = self._get_contract_utxo_and_datum(contribution_id)
             if contribution_utxo and datum:
                 return self.dp.extract_contribution_from_datum(datum)
             return None
@@ -389,7 +350,7 @@ class ProvenanceContract(Contract):
         Submit a contribution to an activated topic.
         """
         try:
-            topic_utxo, datum = self.get_contract_utxo_and_datum(topic_id)
+            topic_utxo, datum = self._get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"Utxos for topic_id {topic_id} not found")
 
@@ -415,7 +376,7 @@ class ProvenanceContract(Contract):
             validator_addr_str = str(self.validator_address)
             contributor_addr_str = str(contributor.address)
             tx_out = f"{validator_addr_str}+{lovelace_amount}"
-            tx_out_topic = self._prepare_topic_output(topic_utxo, validator_addr_str)
+            tx_out_topic = self._prepare_validator_output(topic_utxo, validator_addr_str)
 
             plutus_datum, _ = self.dp.prepare_topic_json(datum, topic["status"].value)
             topic_datum_file = f"topic-datum-{topic_id}.json"
@@ -465,7 +426,7 @@ class ProvenanceContract(Contract):
         Review a contribution with scores and feedback.
         """
         try:
-            contrib_utxo, datum = self.get_contract_utxo_and_datum(contribution_id)
+            contrib_utxo, datum = self._get_contract_utxo_and_datum(contribution_id)
             if not contrib_utxo:
                 raise ContractError(f"Contribution with ID {contribution_id} not found")
 
@@ -475,7 +436,7 @@ class ProvenanceContract(Contract):
                 raise ContractError(f"Contribution with ID {contribution_id} is not in proposed state. Current state is {contrib_status}")
 
             topic_id = contribution["topic_id"]
-            topic_utxo, _ = self.get_contract_utxo_and_datum(topic_id)
+            topic_utxo, _ = self._get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"Topic UTxO for topic {topic_id} for contribution with ID {contribution_id} not found")
 
@@ -554,7 +515,7 @@ class ProvenanceContract(Contract):
         Dispute a reviewed contribution with a reason.
         """
         try:
-            contrib_utxo, datum = self.get_contract_utxo_and_datum(contribution_id)
+            contrib_utxo, datum = self._get_contract_utxo_and_datum(contribution_id)
             if not contrib_utxo:
                 raise ContractError(f"Contribution with ID {contribution_id} not found")
 
@@ -564,7 +525,7 @@ class ProvenanceContract(Contract):
                 raise ContractError(f"Contribution with ID {contribution_id} is not in reviewed state. Current status is {contrib_status}")
 
             topic_id = contribution["topic_id"]
-            topic_utxo, _ = self.get_contract_utxo_and_datum(topic_id)
+            topic_utxo, _ = self._get_contract_utxo_and_datum(topic_id)
             if not topic_utxo:
                 raise ContractError(f"Topic UTxO for topic {topic_id} for contribution with ID {contribution_id} not found")
 

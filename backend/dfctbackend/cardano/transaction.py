@@ -142,8 +142,6 @@ class CardanoTransaction:
             address = Address.from_primitive(address)
 
         utxos = self.context.utxos(str(address))
-        token_name_hex = str_to_hex(token_name)
-
         selected = None
         selected_value = 0
         for utxo in utxos:
@@ -151,23 +149,19 @@ class CardanoTransaction:
             if int(utxo.output.amount.coin) < love_amount:
                 continue
 
-            # Check for the specific token
-            ma = utxo.output.amount.multi_asset
-            policy = ScriptHash(bytes.fromhex(policy_id))
-
-            if policy in ma:
-                for k, v in ma[policy].items():
-                    if str(k) == str(token_name_hex) and int(v) >= int(dfc_amount):
-                        if int(v) > selected_value:
-                            selected_value = int(v)
-                            selected = utxo
+            dfc_amount = self.get_cnt_amount(utxo, policy_id=policy_id)
+            if dfc_amount > selected_value:
+                selected_value = dfc_amount
+                selected = utxo
 
         return selected
 
     def get_cnt_amount(self, utxo, policy_id):
         if utxo:
             policy = ScriptHash(bytes.fromhex(policy_id))
-            token_amount = next(iter(utxo.output.amount.multi_asset[policy].values()))
+            token_amount = 0
+            if policy and policy in utxo.output.amount.multi_asset:
+                token_amount = next(iter(utxo.output.amount.multi_asset[policy].values()))
             return int(token_amount)
 
         return 0
