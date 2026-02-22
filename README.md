@@ -1,11 +1,31 @@
-# DFCT - Decentralized Fact-Checking Toolkit
+# d-FCT (DFCT) on Cardano — Decentralized Fact-Checking Toolkit
 
-DFCT (Decentralized Fact-Checking Toolkit) is a platform that redefines fact-checking by structuring and supporting collaborative verification processes. The platform leverages the Cardano ecosystem to promote transparency, scalability, and active community participation, incentivizing contributions with the DFCT Cardano Native Token (CNT).
+d-FCT (Decentralized Fact-Checking Toolkit), pronounced _de facto_, is a platform that aims to redefine fact-checking by structuring and supporting collaborative verification processes. It leverages the Cardano ecosystem to promote transparency, scalability, and community participation, incentivizing contributions with the **DFCT Cardano Native Token (CNT)**.
 
-This project contains the following main components:
-1. Plutus Smart Contract for the Cardano blockchain
-2. Python FastAPI Backend
+This repository focuses on the **Cardano backend stack**, including:
+1. **Plutus smart contracts** (minting policy + validators)
+2. **Python FastAPI backend** (transaction building, contract interaction, APIs)
 
+## Frontend (Web App)
+
+The user-facing web app lives in a separate repository:
+
+- **dFCT Frontend (ReactJS):** https://github.com/mobr-ai/dFCT-frontend/
+
+The frontend connects to this repo’s FastAPI endpoints to submit topics, trigger reviews, and track on-chain transactions.
+
+## High-Level Architecture
+
+The diagram below summarizes the main moving parts and how they connect:
+
+![d-FCT High-Level Architecture](./docs/architecture.png)
+
+At a high level:
+- The **Frontend (React)** handles user flows (topic submission, review actions, wallet UX).
+- The **Backend (FastAPI)** validates requests, builds/submits Cardano transactions, and exposes REST APIs.
+- **Ogmios** provides chain interaction/querying support for the backend.
+- **Cardano Node (Preview/Testnet/Mainnet)** is the source of truth for transaction submission and validation.
+- **Plutus scripts** define the on-chain rules for provenance/governance and token minting.
 
 ## Prerequisites
 
